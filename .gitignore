@@ -1,7 +1,7 @@
 # Nextflow
 .nextflow/
 .nextflow.log*
-work/
+work
 
 # Slurm
 slurm/
