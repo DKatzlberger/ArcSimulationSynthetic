@@ -100,7 +100,7 @@ SummarizedExperiment::rowData(sce_obj) <- sce_rd_new
 sce_obj$sizeFactor <- NULL
 sce_obj$ExpLibSize <- NULL
 
-## Save sim. ==================================================================
+## Save =======================================================================
 .write_h5ad <- fun_with_ram(anndataR::write_h5ad)
 txt         <- sprintf("saved as %s", paste0(file_name, ".h5ad"))
 

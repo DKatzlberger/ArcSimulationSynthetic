@@ -187,16 +187,12 @@ SummarizedExperiment::rowData(sce_obj) <- sce_rd_new
 sce_obj$sizeFactor <- NULL
 sce_obj$ExpLibSize <- NULL
 
-## Save sim. ==================================================================
+## Save =======================================================================
 .write_h5ad <- fun_with_ram(anndataR::write_h5ad)
 txt         <- sprintf("saved as %s", paste0(file_name, ".h5ad"))
 
 # Integer check
-counts  <- SingleCellExperiment::counts(sce_obj)
-non_int <- (counts %% 1 != 0)
-non_int_genes <- rownames(counts)[rowSums(non_int) > 0]
-
-stopifnot(length(non_int_genes) == 0)
+stopifnot(all(SingleCellExperiment::counts(sce_obj) %% 1 == 0))
 
 .write_h5ad(
   object = sce_obj, 
