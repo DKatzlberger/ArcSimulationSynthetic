@@ -1,0 +1,24 @@
+# Nextflow
+.nextflow/
+.nextflow.log*
+work/
+
+# Slurm
+slurm/
+
+# Symlinks
+data
+results
+
+# Managers 
+.pixi/
+pixi.lock
+
+.renv/
+renv/
+
+# IDE settings
+.vscode/
+
+# Disk usage 
+.disk_usage
