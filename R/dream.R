@@ -110,7 +110,7 @@ txt       <- "saving 'dream' fit obj."
 
 .saveRDS(
   fit,
-  file = here::here(
+  file = file.path(
     output_path,
     paste0(file_name, "_fit.rds")
   ),

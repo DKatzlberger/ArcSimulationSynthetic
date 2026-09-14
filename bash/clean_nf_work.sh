@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Define the target Nextflow work directory path
-TARGET_DIR="results/nextflow/ArcSimSyn_offtarget_mixed"
-PATTERN="${1:-*_dge.rds}"
+TARGET_DIR = "results/nextflow/ArcSimSyn_offtarget_mixed"
+PATTERN    = "${1:-*_dge.rds}"
 
 # Check if the directory exists
 if [ ! -d "$TARGET_DIR" ]; then

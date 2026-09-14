@@ -16,14 +16,14 @@ if (!interactive()) {
   input_path   <- args[2]
   output_path  <- "."
 
-  formula <- args[7]
-  ref     <- args[8]
-
   # Meta
   facLoc <- args[3]
   nOn    <- args[4]
   koEff  <- args[5]
   nGuide <- args[6]
+
+  formula <- args[7]
+  ref     <- args[8]
 
   file_name <- paste0("limma_facLoc_", facLoc, "_nOn_", nOn, "_koEff_", koEff, "_nGuide_", nGuide, "_", formula)
 
@@ -34,14 +34,14 @@ if (!interactive()) {
 
   stopifnot(dirname(dirname(input_path)) == dirname(output_path))
 
-  formula <- "~genotype + sample"
-  ref     <- "NTC"
-
   # Meta
   facLoc <- 2
   nOn    <- 10
   koEff  <- 25
   nGuide <- 50
+
+  formula <- "~genotype + sample"
+  ref     <- "NTC"
 
   file_name <- paste0("limma_facLoc_", facLoc, "_nOn_", nOn, "_koEff_", koEff, "_nGuide_", nGuide, "_", formula)
 }
@@ -108,7 +108,7 @@ txt       <- "saving 'limma' fit obj."
 
 .saveRDS(
   fit,
-  file = here::here(
+  file = file.path(
     output_path,
     paste0(file_name, "_fit.rds")
   ),

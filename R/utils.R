@@ -246,7 +246,7 @@ scc_status <- function(verbose = TRUE) {
 }
 
 script_startup <- function(
-  root,
+  root = getwd(),
   renv = FALSE,
   bioc = FALSE,
   packages = NULL
@@ -322,7 +322,7 @@ script_startup <- function(
 assign_guide_by_max_count <- function(
   obj,
   assay = "CRISPR",
-  ntc_pattern = "NTC|NonTargeting|BRDN",
+  ntc_pattern = "^NTCms|^NonTargeting|^BRDN",
   verbose = TRUE
 ) {
 
@@ -336,7 +336,7 @@ assign_guide_by_max_count <- function(
 
   # Assign genotype
   obj$genotype <- ifelse(
-    grepl(ntc_pattern, obj$guide, ignore.case = TRUE),
+    grepl(ntc_pattern, obj$guide, ignore.case = FALSE),
     "NTC",
     sub("-.*$", "", obj$guide)
   )

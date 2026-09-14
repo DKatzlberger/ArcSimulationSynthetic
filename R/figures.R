@@ -21,11 +21,9 @@ if (!interactive()) {
   input_path   <- "results/nextflow/ArcSimSyn_offtarget_mixed"
   output_path  <- "results/nextflow/ArcSimSyn_offtarget_mixed/figures"
 
-  alpha    <- 0.05
-  logfc    <- 1
-  mixscape <- "false"
+  alpha <- 0.05
 
-  file_name <- paste0("_alpha_", alpha,  "_logfc_", logfc, "_mixscape_", mixscape)
+  file_name <- paste0("_alpha_", alpha)
 }
 
 ## r-utils ====================================================================
@@ -212,19 +210,19 @@ stats <- aggregate(
   cbind(
     # TN: FDR bigger than alpha
     # FN: FDR bigger than alpha
-    # TP: FDR smaller than alpha & effect bigger than cutoff
-    # FP: FDR smaller than alpha & effect bigger than cutoff
+    # TP: FDR smaller than alpha
+    # FP: FDR smaller than alpha
     TN     = dge$status %in% c("Background", "Off-target") & dge$FDR >= alpha,
     FN     = dge$status %in% c("Knockout", "On-target")    & dge$FDR >= alpha,
-    TP     = dge$status %in% c("Knockout", "On-target")    & dge$FDR < alpha  & abs(dge$logFC) >= logfc,
-    FP     = dge$status %in% c("Background", "Off-target") & dge$FDR < alpha  & abs(dge$logFC) >= logfc,
+    TP     = dge$status %in% c("Knockout", "On-target")    & dge$FDR < alpha,
+    FP     = dge$status %in% c("Background", "Off-target") & dge$FDR < alpha,
 
     TN_off = dge$status == "Off-target"                    & dge$FDR >= alpha,
     TN_bg  = dge$status == "Background"                    & dge$FDR >= alpha,
-    TP_ko  = dge$status == "Knockout"                      & dge$FDR < alpha  & abs(dge$logFC) >= logfc,
-    TP_on  = dge$status == "On-target"                     & dge$FDR < alpha  & abs(dge$logFC) >= logfc,
-    FP_off = dge$status == "Off-target"                    & dge$FDR < alpha  & abs(dge$logFC) >= logfc,
-    FP_bg  = dge$status == "Background"                    & dge$FDR < alpha  & abs(dge$logFC) >= logfc
+    TP_ko  = dge$status == "Knockout"                      & dge$FDR < alpha,
+    TP_on  = dge$status == "On-target"                     & dge$FDR < alpha,
+    FP_off = dge$status == "Off-target"                    & dge$FDR < alpha,
+    FP_bg  = dge$status == "Background"                    & dge$FDR < alpha
   ),
   by  = dge[group_vars],
   FUN = function(x) sum(x, na.rm = TRUE)

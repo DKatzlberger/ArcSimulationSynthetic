@@ -65,9 +65,9 @@ workflow {
     // Simualtions ============================================================
 
     // R: splatter ------------------------------------------------------------
-    splatter_facLoc_ch = channel.fromList(params.splatter_facLoc)
+    splatter_facLoc = channel.fromList(params.splatter_facLoc)
 
-    splatter_ch = splatter_facLoc_ch
+    splatter_ch = splatter_facLoc
         .combine(channel.value(params.data))
         .map { facLoc, file -> [file, facLoc] }
         // .view { filePath, facLoc -> 
@@ -146,16 +146,14 @@ workflow {
     )
 
     // DGE pseudobulk =========================================================
+    // R: limma ---------------------------------------------------------------
+    limma_formula = channel.fromList(params.limma_formula)
+    limma_ref     = channel.fromList(params.limma_ref)
+    limma_pairs   = limma_formula.merge(limma_ref)
 
-    // limma ------------------------------------------------------------------
-    limma_formula_ch = channel.fromList(params.limma_formula)
-    limma_ref_ch     = channel.fromList(params.limma_ref)
-
-    limma_pairs_ch   = limma_formula_ch.merge(limma_ref_ch)
-
-    dge_limma_ch = pseudobulk.out
+    limma_args = pseudobulk.out
         .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        .combine(limma_pairs_ch)
+        .combine(limma_pairs)
         // .view { filePath, facLoc, nOn, koEff, nGuide, formula, ref -> 
         //     String.format(
         //         "LIMMA      [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s nGuide: %-5s formula: %-35s ref: %-8s ]", 
@@ -164,24 +162,23 @@ workflow {
         // }
 
     limma(
-        dge_limma_ch.map { table -> table[0] }, // data
-        dge_limma_ch.map { table -> table[1] }, // facLoc
-        dge_limma_ch.map { table -> table[2] }, // nOn
-        dge_limma_ch.map { table -> table[3] }, // koEff
-        dge_limma_ch.map { table -> table[4] }, // nGuide
-        dge_limma_ch.map { table -> table[5] }, // formula
-        dge_limma_ch.map { table -> table[6] }  // ref
+        limma_args.map { table -> table[0] }, // data
+        limma_args.map { table -> table[1] }, // facLoc
+        limma_args.map { table -> table[2] }, // nOn
+        limma_args.map { table -> table[3] }, // koEff
+        limma_args.map { table -> table[4] }, // nGuide
+        limma_args.map { table -> table[5] }, // formula
+        limma_args.map { table -> table[6] }  // ref
     )
 
-    // edger ------------------------------------------------------------------
-    edger_formula_ch = channel.fromList(params.edger_formula)
-    edger_ref_ch     = channel.fromList(params.edger_ref)
+    // R: edger ---------------------------------------------------------------
+    edger_formula = channel.fromList(params.edger_formula)
+    edger_ref     = channel.fromList(params.edger_ref)
+    edger_pairs   = edger_formula.merge(edger_ref)
 
-    edger_pairs_ch   = edger_formula_ch.merge(edger_ref_ch)
-
-    dge_edger_ch = pseudobulk.out
+    edger_args = pseudobulk.out
         .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        .combine(edger_pairs_ch)
+        .combine(edger_pairs)
         // .view { filePath, facLoc, nOn, koEff, nGuide, formula, ref -> 
         //     String.format(
         //         "EDGER      [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s nGuide: %-5s formula: %-35s ref: %-8s ]", 
@@ -190,25 +187,23 @@ workflow {
         // }
 
     edger(
-        dge_edger_ch.map { table -> table[0] }, // data
-        dge_edger_ch.map { table -> table[1] }, // facLoc
-        dge_edger_ch.map { table -> table[2] }, // nOn
-        dge_edger_ch.map { table -> table[3] }, // koEff
-        dge_edger_ch.map { table -> table[4] }, // nGuide
-        dge_edger_ch.map { table -> table[5] }, // formula
-        dge_edger_ch.map { table -> table[6] }  // ref
+        edger_args.map { table -> table[0] }, // data
+        edger_args.map { table -> table[1] }, // facLoc
+        edger_args.map { table -> table[2] }, // nOn
+        edger_args.map { table -> table[3] }, // koEff
+        edger_args.map { table -> table[4] }, // nGuide
+        edger_args.map { table -> table[5] }, // formula
+        edger_args.map { table -> table[6] }  // ref
     )
 
+    // R: deseq2 --------------------------------------------------------------
+    deseq2_formula = channel.fromList(params.deseq2_formula)
+    deseq2_ref     = channel.fromList(params.deseq2_ref)
+    deseq2_pairs   = deseq2_formula.merge(deseq2_ref)
 
-    // deseq2 -----------------------------------------------------------------
-    deseq2_formula_ch = channel.fromList(params.deseq2_formula)
-    deseq2_ref_ch     = channel.fromList(params.deseq2_ref)
-
-    deseq2_pairs_ch   = deseq2_formula_ch.merge(deseq2_ref_ch)
-
-    dge_deseq2_ch = pseudobulk.out
+    deseq2_args = pseudobulk.out
         .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        .combine(deseq2_pairs_ch)
+        .combine(deseq2_pairs)
         // .view { filePath, facLoc, nOn, koEff, nGuide, formula, ref -> 
         //     String.format(
         //         "DESEQ2     [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s nGuide: %-5s formula: %-35s ref: %-8s ]", 
@@ -217,24 +212,23 @@ workflow {
         // }
 
     deseq2(
-        dge_deseq2_ch.map { table -> table[0] }, // data
-        dge_deseq2_ch.map { table -> table[1] }, // facLoc
-        dge_deseq2_ch.map { table -> table[2] }, // nOn
-        dge_deseq2_ch.map { table -> table[3] }, // koEff
-        dge_deseq2_ch.map { table -> table[4] }, // nGuide 
-        dge_deseq2_ch.map { table -> table[5] }, // formula
-        dge_deseq2_ch.map { table -> table[6] }  // ref
+        deseq2_args.map { table -> table[0] }, // data
+        deseq2_args.map { table -> table[1] }, // facLoc
+        deseq2_args.map { table -> table[2] }, // nOn
+        deseq2_args.map { table -> table[3] }, // koEff
+        deseq2_args.map { table -> table[4] }, // nGuide 
+        deseq2_args.map { table -> table[5] }, // formula
+        deseq2_args.map { table -> table[6] }  // ref
     )
 
-    // dream ------------------------------------------------------------------
-    dream_formula_ch = channel.fromList(params.dream_formula)
-    dream_ref_ch     = channel.fromList(params.dream_ref)
+    // R: dream ---------------------------------------------------------------
+    dream_formula = channel.fromList(params.dream_formula)
+    dream_ref     = channel.fromList(params.dream_ref)
+    dream_pairs   = dream_formula.merge(dream_ref)
 
-    dream_pairs_ch   = dream_formula_ch.merge(dream_ref_ch)
-
-    dge_dream_ch = pseudobulk.out
+    dream_args = pseudobulk.out
         .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        .combine(dream_pairs_ch)
+        .combine(dream_pairs)
         // .view { filePath, facLoc, nOn, koEff, nGuide, formula, ref -> 
         //     String.format(
         //         "DREAM      [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s nGuide: %-5s formula: %-35s ref: %-8s ]", 
@@ -243,26 +237,24 @@ workflow {
         // }
 
     dream(
-        dge_dream_ch.map { table -> table[0] }, // data
-        dge_dream_ch.map { table -> table[1] }, // facLoc
-        dge_dream_ch.map { table -> table[2] }, // nOn
-        dge_dream_ch.map { table -> table[3] }, // koEff
-        dge_dream_ch.map { table -> table[4] }, // nGuide 
-        dge_dream_ch.map { table -> table[5] }, // formula
-        dge_dream_ch.map { table -> table[6] }  // ref
+        dream_args.map { table -> table[0] }, // data
+        dream_args.map { table -> table[1] }, // facLoc
+        dream_args.map { table -> table[2] }, // nOn
+        dream_args.map { table -> table[3] }, // koEff
+        dream_args.map { table -> table[4] }, // nGuide 
+        dream_args.map { table -> table[5] }, // formula
+        dream_args.map { table -> table[6] }  // ref
     )
 
     // DGE single cell ========================================================
+    // R: nebula --------------------------------------------------------------
+    nebula_formula = channel.fromList(params.nebula_formula)
+    nebula_ref     = channel.fromList(params.nebula_ref)
+    nebula_pairs   = nebula_formula.merge(nebula_ref)
 
-    // nebula -----------------------------------------------------------------
-    nebula_formula_ch = channel.fromList(params.nebula_formula)
-    nebula_ref_ch     = channel.fromList(params.nebula_ref)
-
-    nebula_pairs_ch   = nebula_formula_ch.merge(nebula_ref_ch)
-
-    dge_nebula_ch = subset.out
+    nebula_args = subset.out
         .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        .combine(nebula_pairs_ch)
+        .combine(nebula_pairs)
         // .view { filePath, facLoc, nOn, koEff, nGuide, formula, ref -> 
         //     String.format(
         //         "NEBULA     [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s nGuide: %-5s formula: %-35s ref: %-8s ]", 
@@ -271,24 +263,23 @@ workflow {
         // }
 
     nebula(
-        dge_nebula_ch.map { table -> table[0] }, // data
-        dge_nebula_ch.map { table -> table[1] }, // facLoc
-        dge_nebula_ch.map { table -> table[2] }, // nOn 
-        dge_nebula_ch.map { table -> table[3] }, // koEff
-        dge_nebula_ch.map { table -> table[4] }, // nGuide
-        dge_nebula_ch.map { table -> table[5] }, // formula
-        dge_nebula_ch.map { table -> table[6] }  // ref
+        nebula_args.map { table -> table[0] }, // data
+        nebula_args.map { table -> table[1] }, // facLoc
+        nebula_args.map { table -> table[2] }, // nOn 
+        nebula_args.map { table -> table[3] }, // koEff
+        nebula_args.map { table -> table[4] }, // nGuide
+        nebula_args.map { table -> table[5] }, // formula
+        nebula_args.map { table -> table[6] }  // ref
     )
 
-    // sceptre ----------------------------------------------------------------
-    sceptre_formula_ch = channel.fromList(params.sceptre_formula)
-    sceptre_ref_ch     = channel.fromList(params.sceptre_ref)
+    // R: sceptre -------------------------------------------------------------
+    sceptre_formula = channel.fromList(params.sceptre_formula)
+    sceptre_ref     = channel.fromList(params.sceptre_ref)
+    sceptre_pairs   = sceptre_formula.merge(sceptre_ref)
 
-    sceptre_pairs_ch   = sceptre_formula_ch.merge(sceptre_ref_ch)
-
-    dge_sceptre_ch = subset.out
+    sceptre_args = subset.out
         .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        .combine(sceptre_pairs_ch)
+        .combine(sceptre_pairs)
         // .view { filePath, facLoc, nOn, koEff, nGuide, formula, ref -> 
         //     String.format(
         //         "SCEPTRE    [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s formula: %-35s ref: %-8s ]", 
@@ -297,24 +288,23 @@ workflow {
         // }
 
     sceptre(
-        dge_sceptre_ch.map { table -> table[0] }, // data
-        dge_sceptre_ch.map { table -> table[1] }, // facLoc
-        dge_sceptre_ch.map { table -> table[2] }, // nOn 
-        dge_sceptre_ch.map { table -> table[3] }, // koEff
-        dge_sceptre_ch.map { table -> table[4] }, // nGuide 
-        dge_sceptre_ch.map { table -> table[5] }, // formula
-        dge_sceptre_ch.map { table -> table[6] }  // ref
+        sceptre_args.map { table -> table[0] }, // data
+        sceptre_args.map { table -> table[1] }, // facLoc
+        sceptre_args.map { table -> table[2] }, // nOn 
+        sceptre_args.map { table -> table[3] }, // koEff
+        sceptre_args.map { table -> table[4] }, // nGuide 
+        sceptre_args.map { table -> table[5] }, // formula
+        sceptre_args.map { table -> table[6] }  // ref
     )
 
-    // wilcox -----------------------------------------------------------------
-    wilcox_formula_ch = channel.fromList(params.wilcox_formula)
-    wilcox_ref_ch     = channel.fromList(params.wilcox_ref)
+    // R: wilcox --------------------------------------------------------------
+    wilcox_formula = channel.fromList(params.wilcox_formula)
+    wilcox_ref     = channel.fromList(params.wilcox_ref)
+    wilcox_pairs   = wilcox_formula.merge(wilcox_ref)
 
-    wilcox_pairs_ch   = wilcox_formula_ch.merge(wilcox_ref_ch)
-
-    dge_wilcox_ch = subset.out
+    wilcox_args = subset.out
         .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        .combine(wilcox_pairs_ch)
+        .combine(wilcox_pairs)
         // .view { filePath, facLoc, nOn, koEff, nGuide, formula, ref -> 
         //     String.format(
         //         "WILCOX     [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s nGuide: %-5s formula: %-35s ref: %-8s ]", 
@@ -323,24 +313,23 @@ workflow {
         // }
 
     wilcox(
-        dge_wilcox_ch.map { table -> table[0] }, // data
-        dge_wilcox_ch.map { table -> table[1] }, // facLoc
-        dge_wilcox_ch.map { table -> table[2] }, // nOn 
-        dge_wilcox_ch.map { table -> table[3] }, // koEff
-        dge_wilcox_ch.map { table -> table[4] }, // nGuide 
-        dge_wilcox_ch.map { table -> table[5] }, // formula
-        dge_wilcox_ch.map { table -> table[6] }  // ref
+        wilcox_args.map { table -> table[0] }, // data
+        wilcox_args.map { table -> table[1] }, // facLoc
+        wilcox_args.map { table -> table[2] }, // nOn 
+        wilcox_args.map { table -> table[3] }, // koEff
+        wilcox_args.map { table -> table[4] }, // nGuide 
+        wilcox_args.map { table -> table[5] }, // formula
+        wilcox_args.map { table -> table[6] }  // ref
     )
 
-    // scmageck ---------------------------------------------------------------
-    scmageck_formula_ch = channel.fromList(params.scmageck_formula)
-    scmageck_ref_ch     = channel.fromList(params.scmageck_ref)
+    // R: scmageck ------------------------------------------------------------
+    scmageck_formula = channel.fromList(params.scmageck_formula)
+    scmageck_ref     = channel.fromList(params.scmageck_ref)
+    scmageck_pairs   = scmageck_formula.merge(scmageck_ref)
 
-    scmageck_pairs_ch   = scmageck_formula_ch.merge(scmageck_ref_ch)
-
-    dge_scmageck_ch = subset.out
+    scmageck_args = subset.out
         .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        .combine(scmageck_pairs_ch)
+        .combine(scmageck_pairs)
         // .view { filePath, facLoc, nOn, koEff, nGuide, formula, ref -> 
         //     String.format(
         //         "SCMAGECK   [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s nGuide: %-5s formula: %-35s ref: %-8s ]", 
@@ -349,13 +338,13 @@ workflow {
         // }
 
     scmageck(
-        dge_scmageck_ch.map { table -> table[0] }, // data
-        dge_scmageck_ch.map { table -> table[1] }, // facLoc
-        dge_scmageck_ch.map { table -> table[2] }, // nOn 
-        dge_scmageck_ch.map { table -> table[3] }, // koEff
-        dge_scmageck_ch.map { table -> table[4] }, // nGuide 
-        dge_scmageck_ch.map { table -> table[5] }, // formula
-        dge_scmageck_ch.map { table -> table[6] }  // ref
+        scmageck_args.map { table -> table[0] }, // data
+        scmageck_args.map { table -> table[1] }, // facLoc
+        scmageck_args.map { table -> table[2] }, // nOn 
+        scmageck_args.map { table -> table[3] }, // koEff
+        scmageck_args.map { table -> table[4] }, // nGuide 
+        scmageck_args.map { table -> table[5] }, // formula
+        scmageck_args.map { table -> table[6] }  // ref
     )
 
     publish:

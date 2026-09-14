@@ -4,6 +4,32 @@
 ## Author: DKatzlberger
 ## Date: 21.01.2026
 
+## This script learns marginal distributions and gene correlations from 
+## single-cell RNA-seq data via 'scDesign3' (ZINB linear regression models).
+
+## Simulates a Perturb-seq dataset with targeting and non-targeting (NTC)
+## cells. Knockouts have 3 unique guide RNAs (2 on-target, 1 off-target).
+## The off-target guide shares on-target genes but impacts extra genes.
+
+## Genes are split into: downstream, off-target, and background sets.
+## Mean parameters for all sets are conditioned on sample info 'I'.
+
+## Downstream genes depend on knockout expression 'C'. Off-target genes
+## depend on 'C' only for off-target guides. For on-target guides, they
+## act as background. Background genes depend only on sample info 'I'.
+## The marginal distributions of genes are grouped for on-target guides
+## and off target guides. 
+
+## Next the gene-gene correlations are learned using gaussian copulas. This 
+## learns network-level dependencies for within samples 'I' and knockout 
+## indication 'K' across genes.
+
+## The mean of targeting cells are modified by modifying 'C' by sampling form
+## expression values from NTC cells (paper).
+
+## Then expression counts for each are sampled using the fitted paramters and 
+## the gene-gene correlation matrix to generate a Perturb-Seq dataset.
+
 ## Reproducibility ============================================================
 seed <- 42
 set.seed(seed)

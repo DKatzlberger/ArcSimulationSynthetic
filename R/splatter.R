@@ -8,6 +8,8 @@
 
 ## This script generates a synthetic Perturb-seq dataset using real
 ## non-targeting control (NTC) cells as the basis for the simulation.
+## The library 'splatter' is used to learn the distribution of the data.
+
 ## The input Seurat object is filtered for NTC cells with 1,000-5,000
 ## detected genes, followed by normalization and selection of the 3,000
 ## most highly variable genes.
