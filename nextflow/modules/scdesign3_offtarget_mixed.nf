@@ -6,28 +6,30 @@
  * The gene sets overlap but the off-target guides has additional (more) downstream genes compared to on-target.
  */
 
-process scdesign3 {
+process scdesign3_offtarget_mixed {
     
     input:
     path data
+    val celltype
     val facLoc
     val nOn
     val koEff
 
     output:
-    tuple val(facLoc), 
+    tuple path("celltype_${celltype}_facLoc_${facLoc}_nOn_${nOn}_koEff_${koEff}.h5ad"),
+          val(celltype)
+          val(facLoc),
           val(nOn),
-          val(koEff),
-          path("scdesign3_facLoc_${facLoc}_nOn_${nOn}_koEff_${koEff}.h5ad"), 
-          path("scdesign3_facLoc_${facLoc}_nOn_${nOn}_koEff_${koEff}_bx.svg"), 
-          path("scdesign3_facLoc_${facLoc}_nOn_${nOn}_koEff_${koEff}_ht.svg"), 
-          path("scdesign3_facLoc_${facLoc}_nOn_${nOn}_koEff_${koEff}_um.svg")
+          val(koEff), 
+          path("celltype_${celltype}_facLoc_${facLoc}_nOn_${nOn}_koEff_${koEff}_bx.svg"), 
+          path("celltype_${celltype}_facLoc_${facLoc}_nOn_${nOn}_koEff_${koEff}_ht.svg")
     
     script:
     """
     Rscript ${workflow.launchDir}/R/scdesign3_offtarget_mixed.R \
         "${workflow.launchDir}" \
         "${data}" \
+        "${celltype}" \
         "${facLoc}" \
         "${nOn}" \
         "${koEff}"

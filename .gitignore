@@ -1,24 +1,27 @@
+## max. code with =============================================================
+
+# IDE settings
+.vscode/
+
+# Lib. managers
+.pixi/
+.renv/
+pixi.lock
+
 # Nextflow
 .nextflow/
 .nextflow.log*
-work
 
-# Slurm
+# Scheduler
 slurm/
 
 # Symlinks
 data
 results
+work
 
-# Managers 
-.pixi/
-pixi.lock
+# Extra dirs
+bash/
 
-.renv/
-renv/
-
-# IDE settings
-.vscode/
-
-# Disk usage 
+# Extra files
 .disk_usage

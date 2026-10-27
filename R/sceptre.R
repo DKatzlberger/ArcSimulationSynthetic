@@ -10,40 +10,56 @@ set.seed(seed)
 
 ## Settings ===================================================================
 if (!interactive()) {
-  args <- commandArgs(trailingOnly = TRUE)
+  full_args  <- commandArgs(trailingOnly = FALSE)
+  trail_args <- commandArgs(trailingOnly = TRUE)
 
-  project_root <- args[1]
-  input_path   <- args[2]
+  # Commands
+  script_path <- sub("^--file=", "", grep("^--file=", full_args, value = TRUE)[1])
+  script_name <- tools::file_path_sans_ext(basename(script_path))
+
+  project_root <- trail_args[1]
+  input_path   <- trail_args[2]
   output_path  <- "."
 
-  formula <- args[7]
-  ref     <- args[8]
-
   # Meta
-  facLoc <- args[3]
-  nOn    <- args[4]
-  koEff  <- args[5]
-  nGuide <- args[6]
+  # facLoc <- args[3]
+  # nOn    <- args[4]
+  # koEff  <- args[5]
+  # nGuide <- args[6]
 
-  file_name <- paste0("sceptre_facLoc_", facLoc, "_nOn_", nOn, "_koEff_", koEff, "_nGuide_", nGuide, "_", formula)
+  # Params
+  formula <- trail_args[7]
+  ref     <- trail_args[8]
+  gene_qc <- TRUE
+
+  # Output file
+  input_name <- tools::file_path_sans_ext(basename(input_path))
+  file_name  <- paste0(input_name, "_", formula)
 
 } else {
-  project_root <- "/home/scc_e_928652/ArcSimulationSynthetic"
-  input_path   <- "results/manual/offtarget_mixed/subset/subset_facLoc_2_nOn_10_koEff_25_nGuide_50.h5ad"
-  output_path  <- "results/manual/offtarget_mixed/sceptre"
+  # Commands
+  script_path  <- rstudioapi::getActiveDocumentContext()$path
+  script_name  <- tools::file_path_sans_ext(basename(script_path))
 
+  project_root <- "/home/scc_e_928652/ArcSimulationSynthetic"
+  input_path   <- "results/manual/ArcSimSyn_offtarget_mixed/subset/celltype_Gran. P_facLoc_2_nOn_10_koEff_100_nGuide_300.h5ad"
+  output_path  <- file.path("results/manual/ArcSimSyn_offtarget_mixed", script_name)
   stopifnot(dirname(dirname(input_path)) == dirname(output_path))
 
-  formula <- "~genotype"
-  ref     <- "NTC"
-
   # Meta
-  facLoc <- 2
-  nOn    <- 10
-  koEff  <- 25
-  nGuide <- 50
+  # facLoc <- 2
+  # nOn    <- 10
+  # koEff  <- 25
+  # nGuide <- 50
 
-  file_name <- paste0("sceptre_facLoc_", facLoc, "_nOn_", nOn, "_koEff_", koEff, "_nGuide_", nGuide, "_", formula)
+  # Params
+  formula <- "~genotype + sample"
+  ref     <- "NTC"
+  gene_qc <- TRUE
+
+  # Output file
+  input_name <- tools::file_path_sans_ext(basename(input_path))
+  file_name  <- paste0(input_name, "_", formula)
 }
 
 ## r-utils ====================================================================
@@ -64,12 +80,19 @@ script_startup(
 )
 
 ## Dataset ====================================================================
+.read_rds  <- fun_with_ram(base::readRDS)
 .read_h5ad <- fun_with_ram(anndataR::read_h5ad)
 
-txt     <- sprintf("%s as 'SingleCellExperiment'", input_path)
-sce_obj <- .read_h5ad(input_path, as = "SingleCellExperiment", info = txt)
+ext <- tools::file_ext(input_path)
+txt <- sprintf("%s as 'SingleCellExperiment'", input_path)
 
-# Gene truths (simulations)
+sce_obj <- switch(ext,
+  rds  = .read_rds(input_path, info = txt),
+  h5ad = .read_h5ad(input_path, as = "SingleCellExperiment", info = txt),
+  showf("Unsupported file extension: %s", ext, type = "stop")
+)
+
+# Gene truth (pipeline)
 sce_rd <- SingleCellExperiment::rowData(sce_obj)
 sce_rd <- as.data.frame(sce_rd)
 
@@ -80,92 +103,70 @@ covs <- .parse_model_formula(formula)
 
 target_covariate <- covs$target_covariate
 extra_covariates <- covs$extra_covariates
+random_covariate <- covs$random_covariates
 
-## DGE ========================================================================
+# Fixed formula
+fixed_formula <- paste("~", paste(c(target_covariate, extra_covariates), collapse = " + "))
+fixed_formula <- as.formula(fixed_formula)
+
+# Sceptre formula
+active_terms    <- c("log(response_n_nonzero)", "log(response_n_umis)", extra_covariates)
+sceptre_formula <- as.formula(paste("~", paste(active_terms, collapse = " + ")))
+
+## Model matrix ===============================================================
 matr <- SingleCellExperiment::counts(sce_obj)
 meta <- SingleCellExperiment::colData(sce_obj)
 
-# Target
-guide_ids <- unique(meta$guide)
+meta[[target_covariate]] <- factor(meta[[target_covariate]])
+meta[[target_covariate]] <- relevel(meta[[target_covariate]], ref = ref)
 
-guide_tars <- sapply(guide_ids, function(g) {
-  unique(meta[[target_covariate]][meta$guide == g])
-})
+mm <- model.matrix(fixed_formula, data = meta)
 
-guide_tars <- ifelse(
-  guide_tars == ref, 
-  "non-targeting", 
-  sprintf("%s%s", target_covariate, guide_tars)
-)
+# N cells per group
+groups <- meta[[target_covariate]]
+target <- setdiff(levels(groups), ref)
+stopifnot(length(target) == 1)
 
-guide_tars <- data.frame(
-  grna_id     = guide_ids,
-  grna_target = guide_tars,
-  stringsAsFactors = FALSE
-)
+sce_rd$n_cells_target <- sum(groups == target, na.rm = TRUE)
+sce_rd$n_cells_ref    <- sum(groups == ref, na.rm = TRUE)
 
-guide_matr <- sapply(guide_ids, function(g) {
-  as.numeric(meta$guide == g)
-})
-colnames(guide_matr) <- guide_ids
-rownames(guide_matr) <- rownames(meta)
+## Sceptre prep. ==============================================================
+.make_guide_target_df   <- fun_with_ram(make_guide_target_df)
+.make_pseudo_guide_matr <- fun_with_ram(make_pseudo_guide_matr)
+.make_extra_cov_df      <- fun_with_ram(make_extra_cov_df)
 
-guide_matr <- t(guide_matr)
-guide_matr <- guide_matr * 100
+guide_matr <- .make_pseudo_guide_matr(meta, guide_col = "guide")
+guide_tars <- .make_guide_target_df(meta, guide_col = "guide", target_col = target_covariate, ref = ref)
+colnames(guide_tars) <- c("grna_id", "grna_target")
 
 # Extra covariates
-if (length(extra_covariates) > 0) {
-  extra_covariates <- as.data.frame(
-    meta[, extra_covariates, drop = FALSE]
-  ) 
+if (!is.null(extra_covariates)) {
+  extra_covs_df <- .make_extra_cov_df(meta, target_col = extra_covariates)
 } else {
-  extra_covariates <- data.frame()
+  extra_covs_df <- data.frame()
 }
 
-# Fit
-sceptre_obj <- sceptre::import_data(
+## Fit ========================================================================
+.import_data  <- fun_with_ram(sceptre::import_data)
+.set_params   <- fun_with_ram(sceptre::set_analysis_parameters)
+.assign_grnas <- fun_with_ram(sceptre::assign_grnas)
+.run_qc       <- fun_with_ram(sceptre::run_qc)
+.run_analysis <- fun_with_ram(sceptre::run_discovery_analysis)
+
+t0 <- Sys.time()
+fit <- sceptre::import_data(
   response_matrix = matr,
   grna_matrix = guide_matr,
   grna_target_data_frame = guide_tars,
-  moi = "low",
-  extra_covariates = data.frame(),
-  response_names = NA_character_,
-  use_ondisc = FALSE,
-  directory_to_write = NULL
+  extra_covariates = extra_covs_df,
+  moi = "low"
 )
 
-pos_ctrl_pair  <- sceptre::construct_positive_control_pairs(
-  sceptre_object = sceptre_obj
-)
-
-discovery_pair <- sceptre::construct_trans_pairs(
-  sceptre_object         = sceptre_obj,
-  positive_control_pairs = pos_ctrl_pair
-)
-
-sceptre_obj <- sceptre::set_analysis_parameters(
-  sceptre_object         = sceptre_obj,
-  discovery_pairs        = discovery_pair,
-  positive_control_pairs = pos_ctrl_pair,
-)
-
-# Fit
-fit <- sceptre::assign_grnas(sceptre_object = sceptre_obj)
-fit <- sceptre::run_qc(sceptre_object = fit)
-fit <- sceptre::run_discovery_analysis(sceptre_object = fit)
-
-# Save 
-.saveRDS  <- fun_with_ram(saveRDS)
-txt       <- "saving 'sceptre' fit obj."
-
-.saveRDS(
-  fit, 
-  file = file.path(
-    output_path,
-    paste0(file_name, "_fit.rds")
-  ),
-  info = txt
-)
+fit <- sceptre::set_analysis_parameters(fit, discovery_pairs = sceptre::construct_trans_pairs(fit), formula_object = sceptre_formula)
+fit <- sceptre::assign_grnas(fit, method = "thresholding", threshold = 1)
+fit <- sceptre::run_qc(fit, n_nonzero_trt_thresh = if (gene_qc) 7 else 0, n_nonzero_cntrl_thresh = if (gene_qc) 7 else 0)
+fit <- sceptre::run_discovery_analysis(fit)
+t1 <- Sys.time()
 
 ## Statistics =================================================================
 .extract_sceptre <- fun_with_ram(extract_sceptre)
@@ -175,27 +176,34 @@ txt <- "getting 'sceptre' stats"
 dge <- .extract_sceptre(fit, info = txt)
 dge <- dge[grepl(paste0("^", target_covariate), dge$coef), ]
 
-# Add genotype
-dge$genotype <- sub(paste0("^", target_covariate), "", dge$coef)
+# Add target covariate
+dge[[target_covariate]] <- sub(pattern = paste0("^", target_covariate), replacement = "", dge$coef)
 
 # Adding gene truth
 dge <- merge(
   x = dge, 
   y = sce_rd, 
-  by.x = "gene", 
-  by.y = "gene", 
+  by = "gene", 
   all.x = TRUE
 )
+
+sce_cols  <- setdiff(names(sce_rd), "gene")
+na_sce_rd <- anyNA(dge[, sce_cols, drop = FALSE])
+if (na_sce_rd) showf("Gene meta could not be assigned.", type = "stop")
 
 # Add information
 dge$formula     <- formula
 dge$method      <- "sceptre"
 dge$workflow    <- "singlecell"
 dge$method_type <- "semi-parametric"
+dge$gene_qc     <- gene_qc
+dge$time_min    <- as.numeric(difftime(t1, t0, units = "mins"))
 
-# Save
-txt <- "saving 'sceptre' dge obj. (incl. gene truth)"
-.saveRDS(
+## Save =======================================================================
+.save_rds <- fun_with_ram(base::saveRDS)
+txt       <- "saving 'sceptre' dge obj. (incl. gene truth)"
+
+.save_rds(
   dge, 
   file = file.path(
     output_path,

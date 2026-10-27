@@ -1,17 +1,16 @@
-#!/usr/bin/env Rscript
-
 ## max. code width ============================================================
 
 ## Title: Arc Institute in vivo pertubation screens
 ## Author: DKatzlberger
 ## Date: 21.01.2026
 
-## Log ========================================================================
+## Log/Printing ===============================================================
+
 showf <- function(fmt, ..., type = c(
   "message", "print", "cat", "warning", "stop"
 )) {
-  type <- match.arg(type)
-  txt <- sprintf(fmt, ...)
+  type   <- match.arg(type)
+  txt    <- sprintf(fmt, ...)
   caller <- sys.call(-1L)
 
   switch(
@@ -26,7 +25,6 @@ showf <- function(fmt, ..., type = c(
   invisible(txt)
 }
 
-
 fun_with_ram <- function(fun) {
 
   # Helper: extend '-' to line 80
@@ -36,7 +34,7 @@ fun_with_ram <- function(fun) {
 
   # Helper: job id  
   .scc_jobid <- function() {
-    cg <- readLines("/proc/self/cgroup", warn = FALSE)
+    cg  <- readLines("/proc/self/cgroup", warn = FALSE)
     hit <- grep("job_[0-9]+", cg, value = TRUE)
     if (length(hit) == 0) return(NA_character_)
     sub(".*job_([0-9]+).*", "\\1", hit[1])
@@ -93,7 +91,7 @@ fun_with_ram <- function(fun) {
   force(fun)
   force(fun_name)
 
- function(...) {
+  function(...) {
 
     args_list <- list(...)
     
@@ -201,7 +199,6 @@ fun_with_ram <- function(fun) {
   }
 }
 
-
 ## Environment ================================================================
 scc_status <- function(verbose = TRUE) {
 
@@ -246,7 +243,7 @@ scc_status <- function(verbose = TRUE) {
 }
 
 script_startup <- function(
-  root = getwd(),
+  root,
   renv = FALSE,
   bioc = FALSE,
   packages = NULL
@@ -279,11 +276,10 @@ script_startup <- function(
     if (bioc) {
       if (!requireNamespace("BiocManager", quietly = TRUE)) {
         renv::install("BiocManager", prompt = FALSE)
+        # BiocManager repositories 
+        suppressMessages(options(repos = BiocManager::repositories()))
         renv::install("BiocVersion", prompt = FALSE)
       }
-
-      # BiocManager repositories 
-      suppressMessages(options(repos = BiocManager::repositories()))
     }
   }
   t1 <- Sys.time()
@@ -314,6 +310,7 @@ script_startup <- function(
   showf("NOTE: R runs through pixi. Make sure all variables are set!\n", type = "cat")
   showf("NOTE: renv sandbox is deactivated!\n", type = "cat")
   
+  
   # Return
   invisible(TRUE)
 }
@@ -322,41 +319,134 @@ script_startup <- function(
 assign_guide_by_max_count <- function(
   obj,
   assay = "CRISPR",
-  ntc_pattern = "^NTCms|^NonTargeting|^BRDN",
+  ntc_pattern = "^NTCms|^NonTargeting|^BRDN|^NTC",
   verbose = TRUE
 ) {
 
-  # Extract guide counts
+  # Extract crispr counts
   counts <- obj@assays[[assay]]$counts
 
-  # Assign guide
+  # Assign guides
   obj$guide <- apply(counts, 2, function(x) {
+    if (max(x) == 0) return(NA)
     rownames(counts)[which.max(x)]
   })
 
-  # Assign genotype
-  obj$genotype <- ifelse(
-    grepl(ntc_pattern, obj$guide, ignore.case = FALSE),
-    "NTC",
-    sub("-.*$", "", obj$guide)
-  )
+  # Find cells with NTC pattern
+  is_ntc <- grepl(ntc_pattern, obj$guide, ignore.case = TRUE)
 
-  # Create on_guide column for NTC comparison
-  obj$on_guide <- ifelse(
-    grepl(ntc_pattern, obj$guide, ignore.case = TRUE),
-    "NTC",
-    obj$guide
-  )
+  # Assign new columns
+  obj$genotype <- ifelse(is_ntc, "NTC", sub("-.*$", "", obj$guide))
+  obj$on_guide <- ifelse(is_ntc, "NTC", obj$guide)
+
+  # Validate guide assignment 
+  valid_cells <- !is.na(obj$guide)
+  genotypes_per_guide <- tapply(obj$genotype[valid_cells], obj$guide[valid_cells], function(x) length(unique(x)))
+  problematic_guides  <- names(genotypes_per_guide[genotypes_per_guide > 1])
+
+  if (length(problematic_guides) > 0) {
+    showf("Identical guides were assigned to different genotypes", type = "stop")
+  }
+  
+  # Verbose
+  n_valid_cells <- sum(!is.na(obj$guide))
+  n_na_cells    <- sum(is.na(obj$guide))
+  n_genotypes   <- length(unique(obj$genotype)) 
 
   if (verbose) {
-    showf("Assigned guides to %s cells", ncol(obj), type = "message")
-    showf("- %s unique knockouts/genotypes", length(unique(obj$genotype)), type = "message")
+    showf("Assigned %s unique genotypes to %s cells.", n_genotypes, n_valid_cells, type = "message")
+    if (n_na_cells > 0) showf("NOTE: %s cells couldn't be assigned.", n_na_cells, type = "message")
   }
 
   # Return
   obj
 }
 
+make_guide_target_df <- function(
+  data,
+  guide_col,
+  target_col, 
+  ref,
+  verbose = TRUE
+) {
+
+  data <- as.data.frame(data)
+  
+  # Unique grna targets
+  obj <- unique(data[, c(guide_col, target_col)])
+  colnames(obj) <- c("guide_id", "guide_target")
+  
+  # Targeting vs. non-targeting
+  obj$guide_target <- ifelse(
+    obj$guide_target == ref, 
+    "non-targeting", 
+    sprintf("%s%s", target_col, obj$guide_target)
+  )
+
+  # Verbose
+  n_guides  <- length(unique(obj$guide_id))
+  n_targets <- length(unique(obj$guide_target))
+
+  if (verbose) {
+    showf("Found %d unique guides mapped to %d unique genotypes.", n_guides, n_targets, type = "message")
+    showf("Recoding reference value '%s' to 'non-targeting'.", ref, type = "message")
+  }
+
+  # Return
+  rownames(obj) <- NULL
+  obj
+}
+
+make_pseudo_guide_matr <- function(
+  data,
+  guide_col,
+  pseudocount = 1,
+  verbose = TRUE
+){
+
+  data <- as.data.frame(data)
+
+  cell_ids  <- rownames(data)
+  guide_ids <- unique(data[[guide_col]])
+
+  # Create matrix
+  obj <- sapply(guide_ids, function(g) {
+    as.numeric(data[[guide_col]] == g)
+  })
+
+  colnames(obj) <- guide_ids
+  rownames(obj) <- cell_ids
+
+  # Add pseudocount
+  obj <- obj * pseudocount
+  obj <- t(obj)
+
+  # Verbose
+  n_cells  <- length(cell_ids)
+  n_guides <- length(guide_ids)
+
+  if (verbose) {
+    showf("Created pseudocounts for %d guides and %d cells.", n_guides, n_cells, type = "message")
+    showf("Added a pseudocount of %d to assigned cells.", pseudocount, type = "message")
+  }
+
+  # Return
+  obj
+}
+
+make_extra_cov_df <- function(
+  data,
+  target_col
+){
+
+  data <- as.data.frame(data)
+
+  # Create extra covariate df
+  obj <- data[, target_col, drop = FALSE]
+  
+  # Return
+  obj
+}
 
 ## scDesign3 ==================================================================
 .is_valid_fit <- function(fit) {
@@ -519,12 +609,15 @@ modify_covariate <- function(
   celltype = "celltype",
   corr_by,
   ko_eff,
+  mode = c("all", "partial"),
   seed = NULL
-){
+) {
 
   if (!is.null(seed)) set.seed(seed)
 
-  # Input
+  mode <- match.arg(mode)
+
+  # Construct input data
   input <- scDesign3::construct_data(
     sce = sce_obj,
     assay_use = "counts",
@@ -537,20 +630,70 @@ modify_covariate <- function(
 
   new_covariate <- input$dat
 
-  ko  <- new_covariate$K == 1
-  ntc <- new_covariate$K == 0
+  # Identify KO and NTC cells
+  ko_idx  <- which(new_covariate$K == 1)
+  ntc_idx <- which(new_covariate$K == 0)
 
- if (is.null(ko_eff) || ko_eff == 100) {
-    # No modification (100% simulated baseline)
-    new_covariate <- new_covariate
-    
-  } else {
-    # Partial knockout (e.g., 25% efficiency)
-    cells_ntc <- sample(new_covariate$C[ntc], sum(ko), replace = TRUE)
-    new_covariate$C[ko] <- round(cells_ntc * (1 - ko_eff / 100))
+  # No modification
+  if (is.null(ko_eff) || ko_eff == 100) {
+    showf("No modification applied (ko_eff = %s).", if (is.null(ko_eff)) "NULL" else "100", type = "message")
+    return(new_covariate)
   }
 
-  # Return
+  # Validate efficiency
+  if (!is.numeric(ko_eff) ||
+      length(ko_eff) != 1 ||
+      is.na(ko_eff) ||
+      ko_eff < 0 ||
+      ko_eff > 100) {
+    showf("ko_eff must be NULL or a single number between 0 and 100.", type = "stop")
+  }
+
+  # Ensure both groups are present
+  if (length(ko_idx) == 0 || length(ntc_idx) == 0) {
+    showf("Both KO (K = 1) and NTC (K = 0) cells must be present.", type = "stop")
+  }
+
+  if (mode == "all") {
+    showf("'ALL' mode: Modifying all %d KO cells using NTC counts scaled by %.0f.", length(ko_idx), 1 - ko_eff / 100, type = "message")
+
+    # PAPER BEHAVIOR:
+    # Modify all KO cells using randomly sampled NTC counts.
+    # Scale counts according to ko_eff.
+    sampled_ntc <- sample(
+      new_covariate$C[ntc_idx],
+      size = length(ko_idx),
+      replace = TRUE
+    )
+
+    new_covariate$C[ko_idx] <- round(
+      sampled_ntc * (1 - ko_eff / 100)
+    )
+
+  } else if (mode == "partial") {
+    # NEW BEHAVIOR:
+    # Calculate number of KO cells to modify
+    n_modify <- round(length(ko_idx) * ko_eff / 100)
+
+    showf("'PARTIAL' mode: Modifying %d of %d KO cells (%.1f%%).", n_modify, length(ko_idx), ko_eff, type = "message")
+
+    # Randomly select KO cells to modify
+    selected_ko <- sample(
+      ko_idx,
+      size = n_modify,
+      replace = FALSE
+    )
+
+    # Assign randomly sampled NTC counts directly
+    sampled_ntc <- sample(
+      new_covariate$C[ntc_idx],
+      size = n_modify,
+      replace = TRUE
+    )
+
+    new_covariate$C[selected_ko] <- sampled_ntc
+  }
+
   new_covariate
 }
 
@@ -633,7 +776,6 @@ extract_params <- function(
   # Return
   counts
 }
-
 
 sim_pipe <- function(
   sce_obj,
@@ -736,7 +878,7 @@ parse_model_formula <- function(
   # Random effects
   bars <- reformulas::findbars(f)
   if (is.null(bars)) {
-    rand_vars <- "1"
+    rand_vars <- NULL
   } else {
     rand_vars <- unique(unname(unlist(lapply(bars, function(b) all.vars(b[[3]])))))
   }
@@ -745,15 +887,15 @@ parse_model_formula <- function(
   fixed_vars <- labels(terms(reformulas::nobars(f)))
   if (length(fixed_vars) > 0) {
     target_covariate <- fixed_vars[1]
-    extra_covariates <- if (length(fixed_vars) > 1) fixed_vars[-1] else character(0)
+    extra_covariates <- if (length(fixed_vars) > 1) fixed_vars[-1] else NULL
   } else {
-    target_covariate <- character(0)
-    extra_covariates <- character(0)
+    target_covariate <- NULL
+    extra_covariates <- NULL
   }
 
   # Verbose
   if (verbose) {
-    showf("%s", formula, type = "message")
+    showf("Formula: %s", formula, type = "message")
     showf("Target covariate: %s", target_covariate, type = "message")
     showf("Extra covariates: %s", paste(extra_covariates, collapse = ", "), type = "message")
     showf("Random covariate: %s", paste(rand_vars, collapse = ", "), type = "message")
@@ -767,6 +909,43 @@ parse_model_formula <- function(
   )
 }
 
+validate_dge <- function(
+  x
+){
+  
+  # Check
+  if (nrow(x) == 0) {
+    showf("Statistic has zero rows. Maybe wrong extraction fun.", type = "stop")
+  }
+
+  # Universal req. columns
+  required_cols <- c("coef", "gene", "logFC", "se", "pvalue")
+  missing_cols  <- setdiff(required_cols, colnames(x))
+
+  if (length(missing_cols) > 0) {
+    showf(
+      paste0("Statistic is missing req. column(s): ", 
+      paste(missing_cols, collapse = ", ")), 
+      type = "stop"
+    )
+  }
+
+  # Check for NA columns
+  required_cols <- c("pvalue")
+  na_cols       <- colSums(is.na(x[required_cols]))
+
+  if (any(na_cols > 0)) {
+    showf(
+      paste0("NOTE: Statistic has NA in column(s): ", 
+      paste(names(na_cols)[na_cols > 0], collapse = ", ")), 
+      type = "message"
+    )
+  }
+
+  # Return
+  invisible(TRUE)
+}
+
 extract_nebula <- function(
   fit,
   intercept = FALSE,
@@ -774,7 +953,7 @@ extract_nebula <- function(
   adjust_m = "BH"
 ){
 
-  stats  <- fit$summary
+  stats <- fit$summary
 
   # Identify coefficients
   coef_names <- unique(sub(
@@ -793,7 +972,6 @@ extract_nebula <- function(
         gene = stats$gene,
         logFC = stats[[paste0("logFC_", coef)]],
         se = stats[[paste0("se_", coef)]],
-        # t = stats[[paste0("logFC_", coef)]] / stats[[paste0("logFC_", coef)]], 
         pvalue = stats[[paste0("p_", coef)]],
         stringsAsFactors = FALSE
       )
@@ -812,7 +990,11 @@ extract_nebula <- function(
     )
   }
 
+  # Validate
   rownames(out) <- NULL
+  validate_dge(out)
+
+  # Return
   out
 }
 
@@ -823,21 +1005,18 @@ extract_sceptre <- function(
   adjust_m = "BH"
 ) {
 
+  # Extract the results table
   stats <- if (inherits(fit, "sceptre_object")) {
-    sceptre::get_result(
-      sceptre_object = fit,
-      analysis = "run_discovery_analysis"
-    )
+    sceptre::get_result(fit, analysis = "run_discovery_analysis")
   } else {
-    showf("x must be a sceptre_object", type = "stop")
+    showf("fit must be a 'sceptre_object'", type = "stop")
   }
   
   out <- data.frame(
-    coef   = stats$grna_target,
-    gene   = stats$response_id,
-    logFC  = stats$log_2_fold_change,
-    se     = stats$se_fold_change,
-    # t      = stats$log_2_fold_change / stats$se_fold_change,
+    coef = stats$grna_target,
+    gene = stats$response_id,
+    logFC = stats$log_2_fold_change,
+    se = stats$se_fold_change,
     pvalue = stats$p_value,
     stringsAsFactors = FALSE
   )
@@ -850,7 +1029,11 @@ extract_sceptre <- function(
     )
   }
   
+  # Validate
   rownames(out) <- NULL
+  validate_dge(out)
+
+  # Return
   out
 }
 
@@ -878,23 +1061,28 @@ extract_limma <- function(
         gene = rownames(fit$coefficients),
         logFC = fit$coefficients[, idx],
         se = fit$stdev.unscaled[, idx] * sqrt(fit$s2.post),
-        # t = fit$t[, idx],
         pvalue = fit$p.value[, idx],
         stringsAsFactors = FALSE
       )
-
-      if (adjust_p) {
-        res$FDR <- p.adjust(
-          res$pvalue,
-          method = adjust_m
-        )
-      }
 
       res
     })
   )
 
+  # Optionally adjust p-values
+  if (adjust_p) {
+    out$FDR <- ave(
+      out$pvalue,
+      out$coef,
+      FUN = function(z){ p.adjust(z, method = adjust_m)}
+    )
+  }
+
+  # Validate
   rownames(out) <- NULL
+  validate_dge(out)
+
+  # Return
   out
 }
 
@@ -924,29 +1112,35 @@ extract_edger <- function(
         coef = coef,
         gene = rownames(qlf),
         logFC = res_table$logFC,
-        se = NA,
+        se = NA_real_,
         pvalue = res_table$PValue,
         stringsAsFactors = FALSE
       )
-
-      if (adjust_p) {
-        res$FDR <- p.adjust(
-          res$pvalue,
-          method = adjust_m
-        )
-      }
 
       res
     })
   )
 
+  # Optionally adjust p-values
+  if (adjust_p) {
+    out$FDR <- ave(
+      out$pvalue,
+      out$coef,
+      FUN = function(z){ p.adjust(z, method = adjust_m)}
+    )
+  }
+
+  # Validate
   rownames(out) <- NULL
+  validate_dge(out)
+
+  # Return
   out
 }
 
-
 extract_deseq2 <- function(
   fit,
+  gene_qc = FALSE,
   intercept = FALSE,
   adjust_p = TRUE,
   adjust_m = "BH"
@@ -963,9 +1157,9 @@ extract_deseq2 <- function(
       
       res_obj <- DESeq2::results(
         fit, 
-        name = coef, 
-        cooksCutoff = FALSE, 
-        independentFiltering = FALSE
+        name = coef,
+        cooksCutoff = gene_qc, 
+        independentFiltering = gene_qc
       )
 
       # Rename to limma format
@@ -978,32 +1172,34 @@ extract_deseq2 <- function(
       }
       
       res <- data.frame(
-        coef   = clean_coef,
-        gene   = rownames(res_obj),
-        logFC  = res_obj$log2FoldChange,
-        se     = res_obj$lfcSE,
-        # t      = res_obj$stat,      # Wald-Statistik (Z-Score bei DESeq2)
+        coef = clean_coef,
+        gene = rownames(res_obj),
+        logFC = res_obj$log2FoldChange,
+        se = res_obj$lfcSE,
         pvalue = res_obj$pvalue,
         stringsAsFactors = FALSE
       )
-
-      if (adjust_p) {
-        res$FDR <- p.adjust(
-          res$pvalue,
-          method = adjust_m
-        )
-      } else {
-        res$FDR <- res_obj$padj
-      }
 
       res
     })
   )
 
+  # Optionally adjust p-values
+  if (adjust_p) {
+    out$FDR <- ave(
+      out$pvalue,
+      out$coef,
+      FUN = function(z){ p.adjust(z, method = adjust_m)}
+    )
+  }
+
+  # Validate
   rownames(out) <- NULL
+  validate_dge(out)
+
+  # Return
   out
 }
-
 
 extract_seurat <- function(
   fit,
@@ -1015,19 +1211,25 @@ extract_seurat <- function(
     coef = fit$coef,
     gene = rownames(fit),
     logFC = fit$avg_log2FC,
-    se = NA,
+    se = NA_real_,
     pvalue = fit$p_val,
     stringsAsFactors = FALSE
   )
 
+  # Optionally adjust p-values
   if (adjust_p) {
-    out$FDR <- p.adjust(
+    out$FDR <- ave(
       out$pvalue,
-      method = adjust_m
+      out$coef,
+      FUN = function(z){ p.adjust(z, method = adjust_m)}
     )
   }
 
+  # Validate
   rownames(out) <- NULL
+  validate_dge(out)
+
+  # Return
   out
 }
 
@@ -1067,21 +1269,26 @@ extract_scmageck <- function(
         stringsAsFactors = FALSE
       )
 
-      if (adjust_p) {
-        res$FDR <- p.adjust(
-          res$pvalue,
-          method = adjust_m
-        )
-      }
-
       res
     })
   )
 
+  # Optionally adjust p-values
+  if (adjust_p) {
+    out$FDR <- ave(
+      out$pvalue,
+      out$coef,
+      FUN = function(z){ p.adjust(z, method = adjust_m)}
+    )
+  }
+
+  # Validate
   rownames(out) <- NULL
+  validate_dge(out)
+
+  # Return
   out
 }
-
 
 ## Meta analysis ==============================================================
 prepare_trade_input <- function(stats, guide) {

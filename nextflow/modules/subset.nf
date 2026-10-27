@@ -7,23 +7,26 @@ process subset {
     
     input:
     path data
+    val celltype
     val facLoc
     val nOn
     val koEff
     val nGuide
 
     output:
-    tuple val(facLoc),
+    tuple path("celltype_${celltype}_facLoc_${facLoc}_nOn_${nOn}_koEff_${koEff}_nGuide_${nGuide}.h5ad"),
+          val(celltype),
+          val(facLoc),
           val(nOn),
           val(koEff),
-          val(nGuide),
-          path("subset_facLoc_${facLoc}_nOn_${nOn}_koEff_${koEff}_nGuide_${nGuide}.h5ad")
+          val(nGuide)
     
     script:
     """
     Rscript ${workflow.launchDir}/R/subset.R \
         "${workflow.launchDir}" \
         "${data}" \
+        "${celltype}" \
         "${facLoc}" \
         "${nOn}" \
         "${koEff}" \

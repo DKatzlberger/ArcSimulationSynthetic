@@ -10,40 +10,56 @@ set.seed(seed)
 
 ## Settings ===================================================================
 if (!interactive()) {
-  args <- commandArgs(trailingOnly = TRUE)
+  full_args  <- commandArgs(trailingOnly = FALSE)
+  trail_args <- commandArgs(trailingOnly = TRUE)
 
-  project_root <- args[1]
-  input_path   <- args[2]
+  # Commands
+  script_path <- sub("^--file=", "", grep("^--file=", full_args, value = TRUE)[1])
+  script_name <- tools::file_path_sans_ext(basename(script_path))
+
+  project_root <- trail_args[1]
+  input_path   <- trail_args[2]
   output_path  <- "."
 
-  formula <- args[7]
-  ref     <- args[8]
-
   # Meta
-  facLoc <- args[3]
-  nOn    <- args[4]
-  koEff  <- args[5]
-  nGuide <- args[6]
+  # facLoc <- args[3]
+  # nOn    <- args[4]
+  # koEff  <- args[5]
+  # nGuide <- args[6]
 
-  file_name <- paste0("scmageck_facLoc_", facLoc, "_nOn_", nOn, "_koEff_", koEff, "_nGuide_", nGuide, "_", formula)
+  # Params
+  formula <- trail_args[7]
+  ref     <- trail_args[8]
+  gene_qc <- TRUE
+
+  # Output file
+  input_name <- tools::file_path_sans_ext(basename(input_path))
+  file_name  <- paste0(input_name, "_", formula)
 
 } else {
-  project_root <- "/home/scc_e_928652/ArcSimulationSynthetic"
-  input_path   <- "results/manual/offtarget_mixed/subset/subset_facLoc_2_nOn_10_koEff_25_nGuide_50.h5ad"
-  output_path  <- "results/manual/offtarget_mixed/scmageck"
+  # Commands
+  script_path  <- rstudioapi::getActiveDocumentContext()$path
+  script_name  <- tools::file_path_sans_ext(basename(script_path))
 
+  project_root <- "/home/scc_e_928652/ArcSimulationSynthetic"
+  input_path   <- "results/manual/ArcSimSyn_offtarget_mixed/subset/celltype_Gran. P_facLoc_2_nOn_10_koEff_100_nGuide_300.h5ad"
+  output_path  <- file.path("results/manual/ArcSimSyn_offtarget_mixed", script_name)
   stopifnot(dirname(dirname(input_path)) == dirname(output_path))
 
-  formula <- "~genotype"
-  ref     <- "NTC"
-
   # Meta
-  facLoc <- 2
-  nOn    <- 10
-  koEff  <- 25
-  nGuide <- 50
+  # facLoc <- 2
+  # nOn    <- 10
+  # koEff  <- 25
+  # nGuide <- 50
 
-  file_name <- paste0("scmageck_facLoc_", facLoc, "_nOn_", nOn, "_koEff_", koEff, "_nGuide_", nGuide, "_", formula)
+  # Params
+  formula <- "~genotype + sample"
+  ref     <- "NTC"
+  gene_qc <- TRUE
+
+  # Output file
+  input_name <- tools::file_path_sans_ext(basename(input_path))
+  file_name  <- paste0(input_name, "_", formula)
 }
 
 ## r-utils ====================================================================
@@ -64,12 +80,19 @@ script_startup(
 )
 
 ## Dataset ====================================================================
+.read_rds  <- fun_with_ram(base::readRDS)
 .read_h5ad <- fun_with_ram(anndataR::read_h5ad)
 
-txt     <- sprintf("%s as 'SingleCellExperiment'", input_path)
-sce_obj <- .read_h5ad(input_path, as = "SingleCellExperiment", info = txt)
+ext <- tools::file_ext(input_path)
+txt <- sprintf("%s as 'SingleCellExperiment'", input_path)
 
-# Gene truths (simulations)
+sce_obj <- switch(ext,
+  rds  = .read_rds(input_path, info = txt),
+  h5ad = .read_h5ad(input_path, as = "SingleCellExperiment", info = txt),
+  showf("Unsupported file extension: %s", ext, type = "stop")
+)
+
+# Gene truth (pipeline)
 sce_rd <- SingleCellExperiment::rowData(sce_obj)
 sce_rd <- as.data.frame(sce_rd)
 
@@ -82,11 +105,28 @@ target_covariate <- covs$target_covariate
 extra_covariates <- covs$extra_covariates
 random_covariate <- covs$random_covariates
 
-## DGE ========================================================================
+# Fixed formula
+fixed_formula <- paste("~", paste(c(target_covariate, extra_covariates), collapse = " + "))
+fixed_formula <- as.formula(fixed_formula)
+
+## Model matrix ===============================================================
 matr <- SingleCellExperiment::counts(sce_obj)
 meta <- SingleCellExperiment::colData(sce_obj)
 
-# Seurat obj.
+meta[[target_covariate]] <- factor(meta[[target_covariate]])
+meta[[target_covariate]] <- relevel(meta[[target_covariate]], ref = ref)
+
+mm <- model.matrix(fixed_formula, data = meta)
+
+# N cells per group
+groups <- meta[[target_covariate]]
+target <- setdiff(levels(groups), ref)
+stopifnot(length(target) == 1)
+
+sce_rd$n_cells_target <- sum(groups == target, na.rm = TRUE)
+sce_rd$n_cells_ref    <- sum(groups == ref, na.rm = TRUE)
+
+## Scmageck prep. =============================================================
 seu_obj <- SeuratObject::CreateAssayObject(
   counts = matr
 )
@@ -101,35 +141,23 @@ seu_obj <- Seurat::ScaleData(seu_obj, verbose = FALSE)
 
 # Barcode obj.
 barcode <- data.frame(
-  cell       = rownames(meta),
-  barcode    = meta$guide,
-  gene       = paste0(target_covariate, meta[[target_covariate]]),
+  cell = rownames(meta),
+  barcode = meta$guide,
+  gene = paste0(target_covariate, meta[[target_covariate]]),
   stringsAsFactors = FALSE
 )
 
-
+## Fit ========================================================================
 .scmageck_lr <- fun_with_ram(scMAGeCK::scmageck_lr)
-fit <- .scmageck_lr(
+
+t0 <- Sys.time()
+fit <- scMAGeCK::scmageck_lr(
   RDS = seu_obj,
   BARCODE = barcode,
   NEGCTRL = paste0(target_covariate, ref),
-  SLOT = "data",
-  PERMUTATION = 10000,
-  SAVEPATH = NULL
+  GENE_FRAC = if (gene_qc) 0.01 else 0
 )
-
-# Save 
-.saveRDS  <- fun_with_ram(saveRDS)
-txt       <- "saving 'scmageck' fit obj."
-
-.saveRDS(
-  fit, 
-  file = file.path(
-    output_path,
-    paste0(file_name, "_fit.rds")
-  ),
-  info = txt
-)
+t1 <- Sys.time()
 
 ## Statistics =================================================================
 .extract_scmageck <- fun_with_ram(extract_scmageck)
@@ -140,26 +168,33 @@ dge <- .extract_scmageck(fit, info = txt)
 dge <- dge[grepl(paste0("^", target_covariate), dge$coef), ]
 
 # Add genotype
-dge$genotype <- sub(paste0("^", target_covariate), "", dge$coef)
+dge[[target_covariate]] <- sub(pattern = paste0("^", target_covariate), replacement = "", dge$coef)
 
 # Adding gene truth
 dge <- merge(
   x = dge, 
   y = sce_rd, 
-  by.x = "gene", 
-  by.y = "gene", 
+  by = "gene", 
   all.x = TRUE
 )
+
+sce_cols  <- setdiff(names(sce_rd), "gene")
+na_sce_rd <- anyNA(dge[, sce_cols, drop = FALSE])
+if (na_sce_rd) showf("Gene meta could not be assigned.", type = "stop")
 
 # Add information
 dge$formula     <- formula
 dge$method      <- "scmageck"
 dge$workflow    <- "singlecell"
 dge$method_type <- "semi-parametric"
+dge$gene_qc     <- gene_qc
+dge$time_min    <- as.numeric(difftime(t1, t0, units = "mins"))
 
-# Save
-txt <- "saving 'scmageck' dge obj. (incl. gene truth)"
-.saveRDS(
+## Save =======================================================================
+.save_rds <- fun_with_ram(base::saveRDS)
+txt       <- "saving 'scmageck' dge obj. (incl. gene truth)"
+
+.save_rds(
   dge, 
   file = file.path(
     output_path,

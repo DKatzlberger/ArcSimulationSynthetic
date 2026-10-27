@@ -1,23 +1,24 @@
 // Modules
-include { splatter }   from '../modules/splatter.nf'
-include { scdesign3 }  from '../modules/scdesign3_offtarget_mixed.nf'
-include { subset }     from '../modules/subset.nf'
-include { pseudobulk } from '../modules/pseudobulk.nf'
-include { limma }      from '../modules/limma.nf'
-include { edger }      from '../modules/edger.nf'
-include { deseq2 }     from '../modules/deseq2.nf'
-include { dream }      from '../modules/dream.nf'
-include { nebula }     from '../modules/nebula.nf'
-include { sceptre }    from '../modules/sceptre.nf'
-include { wilcox }     from '../modules/wilcox.nf'
-include { scmageck }   from '../modules/scmageck.nf'
+include { splatter }   from "../modules/splatter.nf"
+include { scdesign3_offtarget_mixed } from "../modules/scdesign3_offtarget_mixed.nf"
+include { subset }     from "../modules/subset.nf"
+include { pseudobulk } from "../modules/pseudobulk.nf"
+include { limma }      from "../modules/limma.nf"
+include { edger }      from "../modules/edger.nf"
+include { deseq2 }     from "../modules/deseq2.nf"
+include { dream }      from "../modules/dream.nf"
+include { nebula }     from "../modules/nebula.nf"
+include { sceptre }    from "../modules/sceptre.nf"
+include { wilcox }     from "../modules/wilcox.nf"
+include { scmageck }   from "../modules/scmageck.nf"
 
-// Pipeline parameters
+// Parameters
 params {
-    data: Path = "data/JB22_PM/rna_integrated.rds"
+    data: Path = "data/GSE213511/rna_integrated.rds"
     
     // splatter
-    splatter_facLoc = [ 0.1, 0.5, 1.5, 1, 2 ]
+    splatter_celltype = ["Ery"]
+    splatter_facLoc   = [ 0.1, 0.5, 1.5, 1, 2 ]
     
     // scdesign3
     scdesign3_nOn   = [ 10, 50, 100, 200, 500 ]
@@ -27,122 +28,89 @@ params {
     subset_nGuide = [ 10, 20, 50, 100, 200, 500, 1000 ]
     
     // limma
-    limma_formula = [ '~genotype' , '~genotype + sample' , '~guide' , '~guide + sample' ]
-    limma_ref     = [ 'NTC' , 'NTC' ,  'NTC-1' , 'NTC-1' ]
+    limma_formula = [ "~genotype" , "~genotype + sample" , "~guide" , "~guide + sample" ]
+    limma_ref     = [ "NTC" , "NTC" ,  "NTC-1" , "NTC-1" ]
     
     // edger
-    edger_formula = [ '~genotype' , '~genotype + sample' , '~guide' , '~guide + sample' ]
-    edger_ref     = [ 'NTC' , 'NTC' ,  'NTC-1' , 'NTC-1' ]
+    edger_formula = [ "~genotype" , "~genotype + sample" , "~guide" , "~guide + sample" ]
+    edger_ref     = [ "NTC" , "NTC" ,  "NTC-1" , "NTC-1" ]
 
     // deseq2
-    deseq2_formula = [ '~genotype' , '~genotype + sample' , '~guide' , '~guide + sample' ]
-    deseq2_ref     = [ 'NTC' , 'NTC' ,  'NTC-1' , 'NTC-1' ]
+    deseq2_formula = [ "~genotype" , "~genotype + sample" , "~guide" , "~guide + sample" ]
+    deseq2_ref     = [ "NTC" , "NTC" ,  "NTC-1" , "NTC-1" ]
     
     // dream
-    dream_formula = [ '~genotype' , '~genotype + sample' , '~genotype + (1|sample)' , '~genotype + sample + (1|guide)', '~genotype + (1|sample) + (1|guide)' , '~guide' , '~guide + sample' , '~guide + (1|sample)' ]
-    dream_ref     = [ 'NTC' , 'NTC' , 'NTC' , 'NTC', 'NTC' , 'NTC-1' , 'NTC-1' , 'NTC-1' ]
+    dream_formula = [ "~genotype" , "~genotype + sample" , "~genotype + (1|sample)" , "~genotype + sample + (1|guide)", "~genotype + (1|sample) + (1|guide)" , "~guide" , "~guide + sample" , "~guide + (1|sample)" ]
+    dream_ref     = [ "NTC" , "NTC" , "NTC" , "NTC", "NTC" , "NTC-1" , "NTC-1" , "NTC-1" ]
     
     // nebula
-    nebula_formula = [ '~genotype' , '~genotype + sample' , '~genotype + (1|sample)' , '~genotype + sample + (1|guide)', '~guide' , '~guide + sample' , '~guide + (1|sample)' ]
-    nebula_ref     = [ 'NTC' , 'NTC' , 'NTC' , 'NTC', 'NTC-1' , 'NTC-1' , 'NTC-1' ]
+    nebula_formula = [ "~genotype" , "~genotype + sample" , "~genotype + (1|sample)" , "~genotype + sample + (1|guide)", "~guide" , "~guide + sample" , "~guide + (1|sample)" ]
+    nebula_ref     = [ "NTC" , "NTC" , "NTC" , "NTC", "NTC-1" , "NTC-1" , "NTC-1" ]
     
     // sceptre
-    sceptre_formula = [ '~genotype' , '~genotype + sample' ]
-    sceptre_ref     = [ 'NTC' , 'NTC' ]
+    sceptre_formula = [ "~genotype" , "~genotype + sample" ]
+    sceptre_ref     = [ "NTC" , "NTC" ]
     
     // wilcox
-    wilcox_formula = [ '~genotype' ]
-    wilcox_ref     = [ 'NTC' ]
+    wilcox_formula = [ "~genotype" ]
+    wilcox_ref     = [ "NTC" ]
 
     // scmageck
-    scmageck_formula = [ '~genotype' ]
-    scmageck_ref     = [ 'NTC' ]
+    scmageck_formula = [ "~genotype" ]
+    scmageck_ref     = [ "NTC" ]
 }
 
 workflow {
     main:
 
     // Simualtions ============================================================
-
     // R: splatter ------------------------------------------------------------
-    splatter_facLoc = channel.fromList(params.splatter_facLoc)
-
-    splatter_ch = splatter_facLoc
-        .combine(channel.value(params.data))
-        .map { facLoc, file -> [file, facLoc] }
-        // .view { filePath, facLoc -> 
-        //     String.format(
-        //         "SPLATTER   [data: %-50s facLoc: %-5s]", 
-        //         file(filePath).name, facLoc
-        //     )
-        // }
+    splatter_args = channel.value(params.data)
+        .combine(channel.fromList(params.splatter_celltype))
+        .combine(channel.fromList(params.splatter_facLoc))
 
     splatter(
-        splatter_ch.map { table -> table[0] }, // data
-        splatter_ch.map { table -> table[1] }  // facLoc
+        splatter_args.map { arg -> arg[0] }, // data
+        splatter_args.map { arg -> arg[1] }, // celltype
+        splatter_args.map { arg -> arg[2] }  // facLoc
     )
 
     // R: scDesign3 -----------------------------------------------------------
-    scdesign3_nOn_ch   = channel.fromList(params.scdesign3_nOn)
-    scdesign3_koEff_ch = channel.fromList(params.scdesign3_koEff)
+    scdesign3_args = splatter.out
+        .combine(params.scdesign3_nOn)
+        .combine(params.scdesign3_koEff)
 
-    //scdesign3_pairs_ch = scdesign3_nOn_ch.merge(scdesign3_koEff_ch)
-
-    scdesign3_ch = splatter.out
-        .map { out -> [ out[1], out[0] ] } // [data, facLoc]
-        .combine(scdesign3_nOn_ch)
-        .combine(scdesign3_koEff_ch)
-        // .view { filePath, facLoc, nOn, koEff -> 
-        //     String.format(
-        //         "SCDESIGN3  [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s]", 
-        //         file(filePath).name, facLoc, nOn, koEff
-        //     )
-        // }
-
-    scdesign3(
-        scdesign3_ch.map { table -> table[0] }, // data 
-        scdesign3_ch.map { table -> table[1] }, // facLoc 
-        scdesign3_ch.map { table -> table[2] }, // nOn
-        scdesign3_ch.map { table -> table[3] }  // koEff
+    scdesign3_offtarget_mixed(
+        scdesign3_args.map { arg -> arg[0] }, // data 
+        scdesign3_args.map { arg -> arg[1] }, // celltype 
+        scdesign3_args.map { arg -> arg[2] }, // facLoc 
+        scdesign3_args.map { arg -> arg[3] }, // nOn
+        scdesign3_args.map { arg -> arg[4] }  // koEff
     )
 
     // R: subset --------------------------------------------------------------
-    subset_nGuide_ch = channel.fromList(params.subset_nGuide)
-
-    subset_ch = scdesign3.out
-        .map { out -> [ out[3], out[0], out[1], out[2] ] } // [data, facLoc, nOn, koEff]
-        .combine(subset_nGuide_ch)
-        // .view { filePath, facLoc, nOn, koEff, nGuide -> 
-        //     String.format(
-        //         "SUBSET     [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s nGuide: %-5s]", 
-        //         file(filePath).name, facLoc, nOn, koEff, nGuide
-        //     )
-        // }
+    subset_args = scdesign3_offtarget_mixed.out
+        .combine(channel.fromList(params.subset_nGuide))
 
     subset(
-        subset_ch.map { table -> table[0] }, // data 
-        subset_ch.map { table -> table[1] }, // facLoc 
-        subset_ch.map { table -> table[2] }, // nOn
-        subset_ch.map { table -> table[3] }, // koEff
-        subset_ch.map { table -> table[4] }  // nGuide
+        subset_args.map { arg -> arg[0] }, // data 
+        subset_args.map { arg -> arg[2] }, // celltype 
+        subset_args.map { arg -> arg[3] }, // facLoc 
+        subset_args.map { arg -> arg[4] }, // nOn
+        subset_args.map { arg -> arg[5] }, // koEff
+        subset_args.map { arg -> arg[6] }  // nGuide
     )
 
     // R: pseudobulk ----------------------------------------------------------
-    pseudobulk_ch = subset.out
-        .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        // .view { filePath, facLoc, nOn, koEff, nGuide -> 
-        //     String.format(
-        //         "PSEUDOBULK [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s nGuide: %-5s]", 
-        //         file(filePath).name, facLoc, nOn, koEff, nGuide
-        //     )
-        // }
+    pseudobulk_args = subset.out
 
     pseudobulk(
-        pseudobulk_ch.map { table -> table[0] }, // data
-        pseudobulk_ch.map { table -> table[1] }, // facLoc
-        pseudobulk_ch.map { table -> table[2] }, // nOn
-        pseudobulk_ch.map { table -> table[3] }, // koEff
-        pseudobulk_ch.map { table -> table[4] }  // nGuide
+        pseudobulk_args.map { arg -> arg[0] }, // data
+        pseudobulk_args.map { arg -> arg[1] }, // celltype
+        pseudobulk_args.map { arg -> arg[2] }, // facLoc
+        pseudobulk_args.map { arg -> arg[3] }, // nOn
+        pseudobulk_args.map { arg -> arg[4] }, // koEff
+        pseudobulk_args.map { arg -> arg[5] }  // nGuide
     )
 
     // DGE pseudobulk =========================================================
@@ -151,24 +119,17 @@ workflow {
     limma_ref     = channel.fromList(params.limma_ref)
     limma_pairs   = limma_formula.merge(limma_ref)
 
-    limma_args = pseudobulk.out
-        .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        .combine(limma_pairs)
-        // .view { filePath, facLoc, nOn, koEff, nGuide, formula, ref -> 
-        //     String.format(
-        //         "LIMMA      [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s nGuide: %-5s formula: %-35s ref: %-8s ]", 
-        //         file(filePath).name, facLoc, nOn, koEff, nGuide, formula, ref
-        //     )
-        // }
+    limma_args = pseudobulk.out.combine(limma_pairs)
 
     limma(
-        limma_args.map { table -> table[0] }, // data
-        limma_args.map { table -> table[1] }, // facLoc
-        limma_args.map { table -> table[2] }, // nOn
-        limma_args.map { table -> table[3] }, // koEff
-        limma_args.map { table -> table[4] }, // nGuide
-        limma_args.map { table -> table[5] }, // formula
-        limma_args.map { table -> table[6] }  // ref
+        limma_args.map { arg -> arg[0] }, // data
+        limma_args.map { arg -> arg[1] }, // celltype
+        limma_args.map { arg -> arg[2] }, // facLoc
+        limma_args.map { arg -> arg[3] }, // nOn
+        limma_args.map { arg -> arg[4] }, // koEff
+        limma_args.map { arg -> arg[5] }, // nGuide
+        limma_args.map { arg -> arg[6] }, // formula
+        limma_args.map { arg -> arg[7] }  // ref
     )
 
     // R: edger ---------------------------------------------------------------
@@ -176,24 +137,17 @@ workflow {
     edger_ref     = channel.fromList(params.edger_ref)
     edger_pairs   = edger_formula.merge(edger_ref)
 
-    edger_args = pseudobulk.out
-        .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        .combine(edger_pairs)
-        // .view { filePath, facLoc, nOn, koEff, nGuide, formula, ref -> 
-        //     String.format(
-        //         "EDGER      [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s nGuide: %-5s formula: %-35s ref: %-8s ]", 
-        //         file(filePath).name, facLoc, nOn, koEff, nGuide, formula, ref
-        //     )
-        // }
+    edger_args = pseudobulk.out.combine(edger_pairs)
 
     edger(
-        edger_args.map { table -> table[0] }, // data
-        edger_args.map { table -> table[1] }, // facLoc
-        edger_args.map { table -> table[2] }, // nOn
-        edger_args.map { table -> table[3] }, // koEff
-        edger_args.map { table -> table[4] }, // nGuide
-        edger_args.map { table -> table[5] }, // formula
-        edger_args.map { table -> table[6] }  // ref
+        edger_args.map { arg -> arg[0] }, // data
+        edger_args.map { arg -> arg[1] }, // celltype
+        edger_args.map { arg -> arg[2] }, // facLoc
+        edger_args.map { arg -> arg[3] }, // nOn
+        edger_args.map { arg -> arg[4] }, // koEff
+        edger_args.map { arg -> arg[5] }, // nGuide
+        edger_args.map { arg -> arg[6] }, // formula
+        edger_args.map { arg -> arg[7] }  // ref
     )
 
     // R: deseq2 --------------------------------------------------------------
@@ -201,24 +155,17 @@ workflow {
     deseq2_ref     = channel.fromList(params.deseq2_ref)
     deseq2_pairs   = deseq2_formula.merge(deseq2_ref)
 
-    deseq2_args = pseudobulk.out
-        .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        .combine(deseq2_pairs)
-        // .view { filePath, facLoc, nOn, koEff, nGuide, formula, ref -> 
-        //     String.format(
-        //         "DESEQ2     [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s nGuide: %-5s formula: %-35s ref: %-8s ]", 
-        //         file(filePath).name, facLoc, nOn, koEff, nGuide, formula, ref
-        //     )
-        // }
+    deseq2_args = pseudobulk.out.combine(deseq2_pairs)
 
     deseq2(
-        deseq2_args.map { table -> table[0] }, // data
-        deseq2_args.map { table -> table[1] }, // facLoc
-        deseq2_args.map { table -> table[2] }, // nOn
-        deseq2_args.map { table -> table[3] }, // koEff
-        deseq2_args.map { table -> table[4] }, // nGuide 
-        deseq2_args.map { table -> table[5] }, // formula
-        deseq2_args.map { table -> table[6] }  // ref
+        deseq2_args.map { arg -> arg[0] }, // data
+        deseq2_args.map { arg -> arg[1] }, // celltype
+        deseq2_args.map { arg -> arg[2] }, // facLoc
+        deseq2_args.map { arg -> arg[3] }, // nOn
+        deseq2_args.map { arg -> arg[4] }, // koEff
+        deseq2_args.map { arg -> arg[5] }, // nGuide
+        deseq2_args.map { arg -> arg[6] }, // formula
+        deseq2_args.map { arg -> arg[7] }  // ref
     )
 
     // R: dream ---------------------------------------------------------------
@@ -226,24 +173,17 @@ workflow {
     dream_ref     = channel.fromList(params.dream_ref)
     dream_pairs   = dream_formula.merge(dream_ref)
 
-    dream_args = pseudobulk.out
-        .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        .combine(dream_pairs)
-        // .view { filePath, facLoc, nOn, koEff, nGuide, formula, ref -> 
-        //     String.format(
-        //         "DREAM      [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s nGuide: %-5s formula: %-35s ref: %-8s ]", 
-        //         file(filePath).name, facLoc, nOn, koEff, nGuide, formula, ref
-        //     )
-        // }
+    dream_args = pseudobulk.out.combine(dream_pairs)
 
     dream(
-        dream_args.map { table -> table[0] }, // data
-        dream_args.map { table -> table[1] }, // facLoc
-        dream_args.map { table -> table[2] }, // nOn
-        dream_args.map { table -> table[3] }, // koEff
-        dream_args.map { table -> table[4] }, // nGuide 
-        dream_args.map { table -> table[5] }, // formula
-        dream_args.map { table -> table[6] }  // ref
+        dream_args.map { arg -> arg[0] }, // data
+        dream_args.map { arg -> arg[1] }, // celltype
+        dream_args.map { arg -> arg[2] }, // facLoc
+        dream_args.map { arg -> arg[3] }, // nOn
+        dream_args.map { arg -> arg[4] }, // koEff
+        dream_args.map { arg -> arg[5] }, // nGuide
+        dream_args.map { arg -> arg[6] }, // formula
+        dream_args.map { arg -> arg[7] }  // ref
     )
 
     // DGE single cell ========================================================
@@ -252,24 +192,17 @@ workflow {
     nebula_ref     = channel.fromList(params.nebula_ref)
     nebula_pairs   = nebula_formula.merge(nebula_ref)
 
-    nebula_args = subset.out
-        .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        .combine(nebula_pairs)
-        // .view { filePath, facLoc, nOn, koEff, nGuide, formula, ref -> 
-        //     String.format(
-        //         "NEBULA     [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s nGuide: %-5s formula: %-35s ref: %-8s ]", 
-        //         file(filePath).name, facLoc, nOn, koEff, nGuide, formula, ref
-        //     )
-        // }
+    nebula_args = subset.out.combine(nebula_pairs)
 
     nebula(
-        nebula_args.map { table -> table[0] }, // data
-        nebula_args.map { table -> table[1] }, // facLoc
-        nebula_args.map { table -> table[2] }, // nOn 
-        nebula_args.map { table -> table[3] }, // koEff
-        nebula_args.map { table -> table[4] }, // nGuide
-        nebula_args.map { table -> table[5] }, // formula
-        nebula_args.map { table -> table[6] }  // ref
+        nebula_args.map { arg -> arg[0] }, // data
+        nebula_args.map { arg -> arg[1] }, // celltype
+        nebula_args.map { arg -> arg[2] }, // facLoc
+        nebula_args.map { arg -> arg[3] }, // nOn
+        nebula_args.map { arg -> arg[4] }, // koEff
+        nebula_args.map { arg -> arg[5] }, // nGuide
+        nebula_args.map { arg -> arg[6] }, // formula
+        nebula_args.map { arg -> arg[7] }  // ref
     )
 
     // R: sceptre -------------------------------------------------------------
@@ -277,24 +210,17 @@ workflow {
     sceptre_ref     = channel.fromList(params.sceptre_ref)
     sceptre_pairs   = sceptre_formula.merge(sceptre_ref)
 
-    sceptre_args = subset.out
-        .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        .combine(sceptre_pairs)
-        // .view { filePath, facLoc, nOn, koEff, nGuide, formula, ref -> 
-        //     String.format(
-        //         "SCEPTRE    [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s formula: %-35s ref: %-8s ]", 
-        //         file(filePath).name, facLoc, nOn, koEff, nGuide, formula, ref
-        //     )
-        // }
+    sceptre_args = subset.out.combine(sceptre_pairs)
 
     sceptre(
-        sceptre_args.map { table -> table[0] }, // data
-        sceptre_args.map { table -> table[1] }, // facLoc
-        sceptre_args.map { table -> table[2] }, // nOn 
-        sceptre_args.map { table -> table[3] }, // koEff
-        sceptre_args.map { table -> table[4] }, // nGuide 
-        sceptre_args.map { table -> table[5] }, // formula
-        sceptre_args.map { table -> table[6] }  // ref
+        sceptre_args.map { arg -> arg[0] }, // data
+        sceptre_args.map { arg -> arg[1] }, // celltype
+        sceptre_args.map { arg -> arg[2] }, // facLoc
+        sceptre_args.map { arg -> arg[3] }, // nOn
+        sceptre_args.map { arg -> arg[4] }, // koEff
+        sceptre_args.map { arg -> arg[5] }, // nGuide
+        sceptre_args.map { arg -> arg[6] }, // formula
+        sceptre_args.map { arg -> arg[7] }  // ref
     )
 
     // R: wilcox --------------------------------------------------------------
@@ -302,24 +228,17 @@ workflow {
     wilcox_ref     = channel.fromList(params.wilcox_ref)
     wilcox_pairs   = wilcox_formula.merge(wilcox_ref)
 
-    wilcox_args = subset.out
-        .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        .combine(wilcox_pairs)
-        // .view { filePath, facLoc, nOn, koEff, nGuide, formula, ref -> 
-        //     String.format(
-        //         "WILCOX     [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s nGuide: %-5s formula: %-35s ref: %-8s ]", 
-        //         file(filePath).name, facLoc, nOn, koEff, nGuide, formula, ref
-        //     )
-        // }
+    wilcox_args = subset.out.combine(wilcox_pairs)
 
     wilcox(
-        wilcox_args.map { table -> table[0] }, // data
-        wilcox_args.map { table -> table[1] }, // facLoc
-        wilcox_args.map { table -> table[2] }, // nOn 
-        wilcox_args.map { table -> table[3] }, // koEff
-        wilcox_args.map { table -> table[4] }, // nGuide 
-        wilcox_args.map { table -> table[5] }, // formula
-        wilcox_args.map { table -> table[6] }  // ref
+        wilcox_args.map { arg -> arg[0] }, // data
+        wilcox_args.map { arg -> arg[1] }, // celltype
+        wilcox_args.map { arg -> arg[2] }, // facLoc
+        wilcox_args.map { arg -> arg[3] }, // nOn
+        wilcox_args.map { arg -> arg[4] }, // koEff
+        wilcox_args.map { arg -> arg[5] }, // nGuide
+        wilcox_args.map { arg -> arg[6] }, // formula
+        wilcox_args.map { arg -> arg[7] }  // ref
     )
 
     // R: scmageck ------------------------------------------------------------
@@ -327,30 +246,23 @@ workflow {
     scmageck_ref     = channel.fromList(params.scmageck_ref)
     scmageck_pairs   = scmageck_formula.merge(scmageck_ref)
 
-    scmageck_args = subset.out
-        .map { out -> [ out[4], out[0], out[1], out[2], out[3] ] } // [data, facLoc, nOn, koEff, nGuide]
-        .combine(scmageck_pairs)
-        // .view { filePath, facLoc, nOn, koEff, nGuide, formula, ref -> 
-        //     String.format(
-        //         "SCMAGECK   [data: %-50s facLoc: %-5s nOn: %-5s koEff: %-5s nGuide: %-5s formula: %-35s ref: %-8s ]", 
-        //         file(filePath).name, facLoc, nOn, koEff, nGuide, formula, ref
-        //     )
-        // }
+    scmageck_args = subset.out.combine(scmageck_pairs)
 
     scmageck(
-        scmageck_args.map { table -> table[0] }, // data
-        scmageck_args.map { table -> table[1] }, // facLoc
-        scmageck_args.map { table -> table[2] }, // nOn 
-        scmageck_args.map { table -> table[3] }, // koEff
-        scmageck_args.map { table -> table[4] }, // nGuide 
-        scmageck_args.map { table -> table[5] }, // formula
-        scmageck_args.map { table -> table[6] }  // ref
+        scmageck_args.map { arg -> arg[0] }, // data
+        scmageck_args.map { arg -> arg[1] }, // celltype
+        scmageck_args.map { arg -> arg[2] }, // facLoc
+        scmageck_args.map { arg -> arg[3] }, // nOn
+        scmageck_args.map { arg -> arg[4] }, // koEff
+        scmageck_args.map { arg -> arg[5] }, // nGuide
+        scmageck_args.map { arg -> arg[6] }, // formula
+        scmageck_args.map { arg -> arg[7] }  // ref
     )
 
     publish:
     // Sim. res
     res_splatter   = splatter.out
-    res_scdesign3  = scdesign3.out
+    res_scdesign3_offtarget_mixed  = scdesign3_offtarget_mixed.out
     res_subset     = subset.out
     res_pseudobulk = pseudobulk.out
 
@@ -367,10 +279,10 @@ workflow {
 
 output {
     res_splatter {
-        path "nextflow/splatter"
+        path "nextflow/ArcSimSyn_offtarget_mixed/splatter"
         mode "copy"
     }
-    res_scdesign3 {
+    scdesign3_offtarget_mixed {
         path "nextflow/ArcSimSyn_offtarget_mixed/scdesign3"
         mode "copy"
     }

@@ -1,19 +1,18 @@
 // Modules
-include { splatter }   from '../modules/splatter.nf'
-include { scdesign3 }  from '../modules/scdesign3_offtarget_unique.nf'
-include { subset }     from '../modules/subset.nf'
-include { pseudobulk } from '../modules/pseudobulk.nf'
-include { limma }      from '../modules/limma.nf'
-include { edger }      from '../modules/edger.nf'
-include { deseq2 }     from '../modules/deseq2.nf'
-include { dream }      from '../modules/dream.nf'
-include { nebula }     from '../modules/nebula.nf'
-include { sceptre }    from '../modules/sceptre.nf'
-include { wilcox }     from '../modules/wilcox.nf'
-include { scmageck }   from '../modules/scmageck.nf'
+include { splatter }   from "../modules/splatter.nf"
+include { scdesign3 }  from "../modules/scdesign3_offtarget_unique.nf"
+include { subset }     from "../modules/subset.nf"
+include { pseudobulk } from "../modules/pseudobulk.nf"
+include { limma }      from "../modules/limma.nf"
+include { edger }      from "../modules/edger.nf"
+include { deseq2 }     from "../modules/deseq2.nf"
+include { dream }      from "../modules/dream.nf"
+include { nebula }     from "../modules/nebula.nf"
+include { sceptre }    from "../modules/sceptre.nf"
+include { wilcox }     from "../modules/wilcox.nf"
+include { scmageck }   from "../modules/scmageck.nf"
 
-// Pipeline parameters
-// Pipeline parameters
+// Parameters
 params {
     data: Path = "data/JB22_PM/rna_integrated.rds"
     
@@ -28,38 +27,37 @@ params {
     subset_nGuide = [ 10, 20, 50, 100, 200, 500, 1000 ]
     
     // limma
-    limma_formula = [ '~genotype' , '~genotype + sample' , '~guide' , '~guide + sample' ]
-    limma_ref     = [ 'NTC' , 'NTC' ,  'NTC-1' , 'NTC-1' ]
+    limma_formula = [ "~genotype" , "~genotype + sample" , "~guide" , "~guide + sample" ]
+    limma_ref     = [ "NTC" , "NTC" ,  "NTC-1" , "NTC-1" ]
     
     // edger
-    edger_formula = [ '~genotype' , '~genotype + sample' , '~guide' , '~guide + sample' ]
-    edger_ref     = [ 'NTC' , 'NTC' ,  'NTC-1' , 'NTC-1' ]
+    edger_formula = [ "~genotype" , "~genotype + sample" , "~guide" , "~guide + sample" ]
+    edger_ref     = [ "NTC" , "NTC" ,  "NTC-1" , "NTC-1" ]
 
     // deseq2
-    deseq2_formula = [ '~genotype' , '~genotype + sample' , '~guide' , '~guide + sample' ]
-    deseq2_ref     = [ 'NTC' , 'NTC' ,  'NTC-1' , 'NTC-1' ]
+    deseq2_formula = [ "~genotype" , "~genotype + sample" , "~guide" , "~guide + sample" ]
+    deseq2_ref     = [ "NTC" , "NTC" ,  "NTC-1" , "NTC-1" ]
     
     // dream
-    dream_formula = [ '~genotype' , '~genotype + sample' , '~genotype + (1|sample)' , '~genotype + sample + (1|guide)', '~genotype + (1|sample) + (1|guide)' , '~guide' , '~guide + sample' , '~guide + (1|sample)' ]
-    dream_ref     = [ 'NTC' , 'NTC' , 'NTC' , 'NTC', 'NTC' , 'NTC-1' , 'NTC-1' , 'NTC-1' ]
+    dream_formula = [ "~genotype" , "~genotype + sample" , "~genotype + (1|sample)" , "~genotype + sample + (1|guide)", "~genotype + (1|sample) + (1|guide)" , "~guide" , "~guide + sample" , "~guide + (1|sample)" ]
+    dream_ref     = [ "NTC" , "NTC" , "NTC" , "NTC", "NTC" , "NTC-1" , "NTC-1" , "NTC-1" ]
     
     // nebula
-    nebula_formula = [ '~genotype' , '~genotype + sample' , '~genotype + (1|sample)' , '~genotype + sample + (1|guide)', '~guide' , '~guide + sample' , '~guide + (1|sample)' ]
-    nebula_ref     = [ 'NTC' , 'NTC' , 'NTC' , 'NTC', 'NTC-1' , 'NTC-1' , 'NTC-1' ]
+    nebula_formula = [ "~genotype" , "~genotype + sample" , "~genotype + (1|sample)" , "~genotype + sample + (1|guide)", "~guide" , "~guide + sample" , "~guide + (1|sample)" ]
+    nebula_ref     = [ "NTC" , "NTC" , "NTC" , "NTC", "NTC-1" , "NTC-1" , "NTC-1" ]
     
     // sceptre
-    sceptre_formula = [ '~genotype' , '~genotype + sample' ]
-    sceptre_ref     = [ 'NTC' , 'NTC' ]
+    sceptre_formula = [ "~genotype" , "~genotype + sample" ]
+    sceptre_ref     = [ "NTC" , "NTC" ]
     
     // wilcox
-    wilcox_formula = [ '~genotype' ]
-    wilcox_ref     = [ 'NTC' ]
+    wilcox_formula = [ "~genotype" ]
+    wilcox_ref     = [ "NTC" ]
 
     // scmageck
-    scmageck_formula = [ '~genotype' ]
-    scmageck_ref     = [ 'NTC' ]
+    scmageck_formula = [ "~genotype" ]
+    scmageck_ref     = [ "NTC" ]
 }
-
 
 workflow {
     main:

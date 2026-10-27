@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Define the target Nextflow work directory path
-TARGET_DIR = "results/nextflow/ArcSimSyn_offtarget_mixed"
-PATTERN    = "${1:-*_dge.rds}"
+TARGET_DIR="work/ArcSimSyn_offtarget_unique"
+PATTERN="${1:-sceptre_*_dge.rds}"
 
 # Check if the directory exists
 if [ ! -d "$TARGET_DIR" ]; then
@@ -10,8 +10,8 @@ if [ ! -d "$TARGET_DIR" ]; then
     exit 1
 fi
 
-echo "Searching Nextflow work tree '$TARGET_DIR'..."
-echo "Searching Nextflow work tree for subdirectories containing '$PATTERN'..."
+echo "Searching Nextflow work tree '$TARGET_DIR'."
+echo "Searching Nextflow work tree for subdirectories containing '$PATTERN'."
 
 # Find unique directories containing the pattern
 # We use a temporary file to store the list securely

@@ -21,9 +21,11 @@ if (!interactive()) {
   input_path   <- "results/nextflow/ArcSimSyn_offtarget_mixed"
   output_path  <- "results/nextflow/ArcSimSyn_offtarget_mixed/figures"
 
-  alpha <- 0.05
+  # Params
+  target_alpha <- 0.05
+  gene_qc      <- TRUE
 
-  file_name <- paste0("_alpha_", alpha)
+  file_name <- paste0("_qc_", gene_qc, "_alpha_", target_alpha)
 }
 
 ## r-utils ====================================================================
@@ -185,11 +187,62 @@ dge <- readDGE(
   pattern = "~genotype.*_dge\\.rds$"
 )
 
-dge$sim_mode <- tolower(dge$sim_mode)
-dge$facLoc   <- factor(dge$facLoc, levels = c(0.1, 0.5, 1, 1.5, 2))
-dge$nOn      <- factor(dge$nOn)
-dge$koEff    <- factor(dge$koEff)
-dge$nGuide   <- factor(dge$nGuide)
+## Gene filter ================================================================
+if (!gene_qc) {
+  sim_vars    <- c("sim_mode", "facLoc", "nOn", "koEff", "nGuide")
+  method_vars <- c("workflow", "method_type", "method", "formula")
+
+  # Unique gene × simulation × method combinations
+  x <- unique(dge[c("gene", sim_vars, method_vars)])
+
+  x$sim_id    <- interaction(x[sim_vars], drop = TRUE)
+  x$method_id <- interaction(x[method_vars], drop = TRUE)
+
+  # Number of methods in each simulation scenario
+  n_methods <- tapply(x$method_id, x$sim_id, function(z) length(unique(z)))
+
+  # Number of methods analyzing each gene in each scenario
+  g <- aggregate(method_id ~ sim_id + gene, x, function(z) length(unique(z)))
+
+  # Keep genes analyzed by ALL methods in that scenario
+  common <- g$method_id == n_methods[as.character(g$sim_id)]
+
+  # Valid gene × scenario combinations
+  keep <- g[common, c("sim_id", "gene")]
+
+  # Add scenario ID to original data
+  dge$sim_id <- interaction(dge[sim_vars], drop = TRUE)
+
+  # Filter
+  dge <- dge[paste(dge$sim_id, dge$gene) %in% paste(keep$sim_id, keep$gene), ]
+  dge$sim_id <- NULL
+
+  dge$gene_universe <- "intersection"
+} else {
+  dge$gene_universe <- "method-specific"
+}
+
+## Factors ====================================================================
+dge$sim_mode      <- factor(dge$sim_mode)
+dge$gene_universe <- factor(dge$gene_universe)
+dge$facLoc        <- factor(dge$facLoc, levels = c(0.1, 0.5, 1, 1.5, 2))
+dge$nOn           <- factor(dge$nOn)
+dge$koEff         <- factor(dge$koEff)
+dge$nGuide        <- factor(dge$nGuide)
+
+dge$method  <- factor(
+  dge$method, 
+  levels = c(
+    "limma",
+    "edger",
+    "deseq2",
+    "dream",
+    "wilcox",
+    "nebula",
+    "sceptre",
+    "scmageck"
+  )
+)
 
 dge$formula  <- factor(
   dge$formula, 
@@ -203,7 +256,7 @@ dge$formula  <- factor(
 )
 
 ## Stats. =====================================================================
-group_vars <- c("sim_mode", "workflow", "method_type", "method", "formula", "facLoc", "nOn", "koEff", "nGuide")
+group_vars <- c("sim_mode", "gene_universe", "workflow", "method_type", "method", "formula", "facLoc", "nOn", "koEff", "nGuide")
 
 # Confusion matrix
 stats <- aggregate(
@@ -212,17 +265,17 @@ stats <- aggregate(
     # FN: FDR bigger than alpha
     # TP: FDR smaller than alpha
     # FP: FDR smaller than alpha
-    TN     = dge$status %in% c("Background", "Off-target") & dge$FDR >= alpha,
-    FN     = dge$status %in% c("Knockout", "On-target")    & dge$FDR >= alpha,
-    TP     = dge$status %in% c("Knockout", "On-target")    & dge$FDR < alpha,
-    FP     = dge$status %in% c("Background", "Off-target") & dge$FDR < alpha,
+    TN     = dge$status %in% c("Background", "Off-target") & dge$FDR >= target_alpha,
+    FN     = dge$status %in% c("Knockout", "On-target")    & dge$FDR >= target_alpha,
+    TP     = dge$status %in% c("Knockout", "On-target")    & dge$FDR < target_alpha,
+    FP     = dge$status %in% c("Background", "Off-target") & dge$FDR < target_alpha,
 
-    TN_off = dge$status == "Off-target"                    & dge$FDR >= alpha,
-    TN_bg  = dge$status == "Background"                    & dge$FDR >= alpha,
-    TP_ko  = dge$status == "Knockout"                      & dge$FDR < alpha,
-    TP_on  = dge$status == "On-target"                     & dge$FDR < alpha,
-    FP_off = dge$status == "Off-target"                    & dge$FDR < alpha,
-    FP_bg  = dge$status == "Background"                    & dge$FDR < alpha
+    TN_off = dge$status == "Off-target"                    & dge$FDR >= target_alpha,
+    TN_bg  = dge$status == "Background"                    & dge$FDR >= target_alpha,
+    TP_ko  = dge$status == "Knockout"                      & dge$FDR < target_alpha,
+    TP_on  = dge$status == "On-target"                     & dge$FDR < target_alpha,
+    FP_off = dge$status == "Off-target"                    & dge$FDR < target_alpha,
+    FP_bg  = dge$status == "Background"                    & dge$FDR < target_alpha
   ),
   by  = dge[group_vars],
   FUN = function(x) sum(x, na.rm = TRUE)
@@ -308,7 +361,7 @@ p_sim_mode <- ggplot2::ggplot(
   )
 ) +
 ggplot2::geom_tile(
-  color = NA,
+  color = "black",
   linewidth = 0.1,
   show.legend = TRUE
 ) +
@@ -322,12 +375,7 @@ ggplot2::scale_fill_manual(
   values = c(
     "mixed guides"  = RColorBrewer::brewer.pal(8, "Dark2")[3], 
     "unique guides" = RColorBrewer::brewer.pal(8, "Dark2")[4]
-  ),
-  limits = c(
-    "mixed guides", 
-    "unique guides"
-  ),
-  drop = FALSE
+  )
 ) +
 ggplot2::labs(
   x = NULL,
@@ -441,11 +489,59 @@ ggplot2::theme(
   plot.margin = ggplot2::margin(0, 0, 0, 0, "pt")
 )
 
+# Gene universe
+p_gene_universe <- ggplot2::ggplot(
+  data = stats,
+  mapping = ggplot2::aes(
+    x = method,
+    y = "Gene filter",
+    fill = gene_universe
+  )
+) +
+ggplot2::geom_tile(
+  color = "black",
+  linewidth = 0.1,
+  show.legend = TRUE
+) +
+ggplot2::facet_grid(
+  cols = ggplot2::vars(formula),
+  scales = "free_x",
+  space = "free"
+) +
+ggplot2::scale_fill_manual(
+  name = "Gene filter", 
+  values = c(
+    "intersection"    = "darkred",
+    "method-specific" = "#D4A017"
+  )
+) +
+ggplot2::labs(
+  x = NULL,
+  y = NULL
+) +
+theme_DK(
+  show_facet_x = FALSE,
+  show_label_x = FALSE,
+  show_ticks_x = FALSE,
+  show_borders = FALSE,
+  show_grid = FALSE,
+  show_axis = FALSE
+) +
+ggplot2::theme(
+  axis.title.y = ggplot2::element_text(
+    angle = 0,
+    vjust = 0.5,
+    hjust = 0.5
+  ),
+  plot.margin = ggplot2::margin(0, 0, 0, 0, "pt")
+)
+
 # Patchwork
 p_fig_1_panel_A0 <- wrap_plots(
   p_sim_mode,
   p_workflow,
   p_method_type,
+  p_gene_universe,
   ncol = 1
 )
 
@@ -630,18 +726,18 @@ ggplot2::stat_summary(
   width = 0.2,
   linewidth = 0.2
 ) +
-ggplot2::geom_hline(
-  ggplot2::aes(
-    yintercept = alpha, 
-    linetype = paste0("FDR ", alpha) 
-  ),
-  color = "black",     
-  linewidth = 0.3
-) +
-ggplot2::scale_linetype_manual(
-  name = "Threshold",
-  values = setNames("solid", paste0("FDR ", alpha))
-) +
+# ggplot2::geom_hline(
+#   ggplot2::aes(
+#     yintercept = target_alpha, 
+#     linetype = paste0("FDR ", target_alpha) 
+#   ),
+#   color = "black",     
+#   linewidth = 0.3
+# ) +
+# ggplot2::scale_linetype_manual(
+#   name = "Threshold",
+#   values = setNames("dashed", paste0("FDR ", target_alpha))
+# ) +
 ggplot2::scale_y_continuous(
   limits = function(x) c(min(0, x), max(1, x)),
   breaks = seq(0, 1, by = 0.25)
@@ -695,7 +791,7 @@ ggplot2::scale_fill_manual(
   )
 ) +
 ggplot2::labs(
-  x = NULL,
+  x = "Method",
   y = NULL
 ) +
 theme_DK(
@@ -725,7 +821,7 @@ p_fig_1_panel_A <-
   p_fig_1_panel_A4 +
   patchwork::plot_layout(
     ncol = 1,
-    heights = c(0.05, 0.05, 0.05, 0.3, 0.3, 0.3, 0.15),
+    heights = c(0.05, 0.05, 0.05, 0.05, 0.3, 0.3, 0.3, 0.15),
     guides = "collect"
   ) 
 
@@ -771,7 +867,7 @@ p_sim_mode <- ggplot2::ggplot(
   )
 ) +
 ggplot2::geom_tile(
-  color = NA,
+  color = "black",
   linewidth = 0.1,
   show.legend = TRUE
 ) +
@@ -785,12 +881,7 @@ ggplot2::scale_fill_manual(
   values = c(
     "mixed guides"  = RColorBrewer::brewer.pal(8, "Dark2")[3], 
     "unique guides" = RColorBrewer::brewer.pal(8, "Dark2")[4]
-  ),
-  limits = c(
-    "mixed guides", 
-    "unique guides"
-  ),
-  drop = FALSE
+  )
 ) +
 ggplot2::labs(
   x = NULL,
@@ -887,18 +978,18 @@ ggplot2::stat_summary(
   geom = "line", 
   linewidth = 0.3
 ) +
-ggplot2::geom_hline(
-  ggplot2::aes(
-    yintercept = alpha, 
-    linetype = paste0("FDR ", alpha) 
-  ),
-  color = "black",     
-  linewidth = 0.3
-) +
-ggplot2::scale_linetype_manual(
-  name = "Threshold",
-  values = setNames("solid", paste0("FDR ", alpha))
-) +
+# ggplot2::geom_hline(
+#   ggplot2::aes(
+#     yintercept = target_alpha, 
+#     linetype = paste0("FDR ", target_alpha) 
+#   ),
+#   color = "black",     
+#   linewidth = 0.3
+# ) +
+# ggplot2::scale_linetype_manual(
+#   name = "Threshold",
+#   values = setNames("dashed", paste0("FDR ", target_alpha))
+# ) +
 ggplot2::scale_y_continuous(
   limits = c(0, 1)
   # labels = scales::percent_format(
@@ -974,7 +1065,7 @@ p_sim_mode <- ggplot2::ggplot(
   )
 ) +
 ggplot2::geom_tile(
-  color = NA,
+  color = "black",
   linewidth = 0.1,
   show.legend = TRUE
 ) +
@@ -988,12 +1079,7 @@ ggplot2::scale_fill_manual(
   values = c(
     "mixed guides"  = RColorBrewer::brewer.pal(8, "Dark2")[3], 
     "unique guides" = RColorBrewer::brewer.pal(8, "Dark2")[4]
-  ),
-  limits = c(
-    "mixed guides", 
-    "unique guides"
-  ),
-  drop = FALSE
+  )
 ) +
 ggplot2::labs(
   x = NULL,

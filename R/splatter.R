@@ -34,26 +34,45 @@ set.seed(seed)
 
 ## Settings ===================================================================
 if (!interactive()) {
-  args <- commandArgs(trailingOnly = TRUE)
+  full_args  <- commandArgs(trailingOnly = FALSE)
+  trail_args <- commandArgs(trailingOnly = TRUE)
 
-  project_root <- args[1]
-  input_path   <- args[2]
+  # Commands
+  script_path <- sub("^--file=", "", grep("^--file=", full_args, value = TRUE)[1])
+  script_name <- tools::file_path_sans_ext(basename(script_path))
+
+  project_root <- trail_args[1]
+  input_path   <- trail_args[2]
   output_path  <- "."
 
-  # Meta
-  facLoc <-  as.numeric(args[3])
+  # Params
+  celltype <- as.character(trail_args[3])
+  facLoc   <- as.numeric(trail_args[4])
 
-  file_name <- paste0("splatter_facLoc_", facLoc)
+  knockout <- NULL
+  mu_scale <- 0.001
+
+  # Output file
+  file_name <- paste0(script_name, "_celltype_", celltype, "_facLoc_", facLoc)
 
 } else {
+  # Commands
+  script_path  <- rstudioapi::getActiveDocumentContext()$path
+  script_name  <- tools::file_path_sans_ext(basename(script_path))
+
   project_root <- "/home/scc_e_928652/ArcSimulationSynthetic"
-  input_path   <- "data/JB22_PM/rna_integrated.rds"
-  output_path  <- "results/manual/splatter"
+  input_path   <- "data/GSE213511/rna_integrated.rds"
+  output_path  <- file.path("results/manual/ArcSimSyn_offtarget_mixed", script_name)
 
-  # Meta
-  facLoc <- 2
+  # Params
+  celltype <- "Gran. P"
+  facLoc   <- 2
 
-  file_name <- paste0("splatter_facLoc_", facLoc)
+  knockout <- NULL
+  mu_scale <- 0.005
+
+  # Output file
+  file_name <- paste0("celltype_", celltype, "_facLoc_", facLoc)
 }
 
 ## r-utils ====================================================================
@@ -69,22 +88,54 @@ script_startup(
   packages = c(
     "SummarizedExperiment",
     "SingleCellExperiment",
-    "splatter"
+    "splatter",
+    "Seurat"
   )
 )
 
 ## Dataset ====================================================================
-.readRDS <- fun_with_ram(base::readRDS)
+.read_rds  <- fun_with_ram(base::readRDS)
+.read_h5ad <- fun_with_ram(anndataR::read_h5ad)
 
-txt      <- sprintf("'%s' as 'Seurat'", input_path)
-seu_obj  <- .readRDS(input_path, info = txt)
+ext <- tools::file_ext(input_path)
+txt <- sprintf("'%s' as 'Seurat'", input_path)
 
-# Genotype
+seu_obj <- switch(ext,
+  rds  = .read_rds(input_path, info = txt),
+  h5ad = .read_h5ad(input_path, as = "Seurat", info = txt),
+  showf("Unsupported file extension: %s", ext, type = "stop")
+)
+
+## Celltype ===================================================================
+.subset <- fun_with_ram(base::subset)
+
+txt     <- sprintf("subsetting to celltype '%s'", celltype)
+keep    <- colnames(seu_obj)[seu_obj$celltype %in% celltype]
+seu_obj <- .subset(seu_obj, cells = keep, info = txt)
+
+## Genotype & on_guide ========================================================
 .assign_guide_by_max_count <- fun_with_ram(assign_guide_by_max_count)
+
 seu_obj <- .assign_guide_by_max_count(seu_obj)
 
-# Select cells
-seu_obj <- subset(seu_obj, subset = genotype == "NTC")
+# Check
+has_KO  <- !is.null(knockout) && any(knockout %in% seu_obj$genotype)
+has_NTC <- "NTC" %in% seu_obj$genotype
+
+if (!has_KO && !has_NTC) showf("Neither '%s' nor 'NTC' assigned to any cells.", knockout, type = "stop")
+if (!is.null(knockout) && !has_KO) showf("'%s' not assigned to any cells.", knockout, type = "stop")
+if (!has_NTC) showf("'%s' not assigned to any cells.", "NTC", type = "stop")
+
+# Subset to knockout (if specified) & NTC
+if (is.null(knockout)) {
+  txt  <- "subsetting to 'NTC'"
+  keep <- colnames(seu_obj)[seu_obj$genotype %in% "NTC"]
+} else {
+  txt  <- sprintf("subsetting to knockout '%s' and 'NTC'", knockout)
+  keep <- colnames(seu_obj)[seu_obj$genotype %in% c(knockout, "NTC")]
+}
+
+seu_obj <- .subset(seu_obj, cells = keep, info = txt)
 seu_obj <- subset(seu_obj, subset = nFeature_RNA >= 1000 & nFeature_RNA <= 5000)
 
 # Select 3000 hvgs
@@ -117,7 +168,7 @@ params <- splatter::setParams(
   # Samples
   batchCells = round(ncells * c(0.325, 0.35, 0.325)),
   batch.facLoc = 0.1,
-  batch.facScale = 0.1
+  batch.facScale = 0.5
 )
 
 # Simulate cells
@@ -150,7 +201,7 @@ knockout  <- which.max(reads_ntc)
 
 # Mean (knockout)
 mu_ntc <- mean(SingleCellExperiment::counts(sce_obj)[knockout, cells_ntc])
-mu_tar <- mu_ntc * 0.01
+mu_tar <- mu_ntc * mu_scale
 disp   <- splatter::getParam(params, "bcv.common")
 
 SingleCellExperiment::counts(sce_obj)[knockout, cells_tar] <- rnbinom(length(cells_tar), mu = mu_tar, size = 1/disp^2)
@@ -162,9 +213,10 @@ sce_obj$genotype <- ifelse(sce_obj$group == "non-targeting", "NTC", rownames(sce
 sce_rd_old <- SummarizedExperiment::rowData(sce_obj)
 sce_rd_new <- S4Vectors::DataFrame(row.names = rownames(sce_obj))
 
+sce_rd_new$sim_mode   <- "synthetic"
+sce_rd_new$celltype   <- celltype
 sce_rd_new$gene       <- sce_rd_old$Gene
 sce_rd_new$facLoc     <- facLoc
-sce_rd_new$true_logFC <- facLoc * log2(exp(1))
 sce_rd_new$sim_logFC  <- log2(sce_rd_old$DEFacGroup2 / sce_rd_old$DEFacGroup1)
 
 sce_rd_new$sim_logFC[knockout] <- log2(mu_tar / (sce_rd_old$GeneMean[knockout] * sce_rd_old$DEFacGroup1[knockout]))
@@ -273,11 +325,9 @@ bottom_col_anno <- cmplx_anno(
 )
 
 # Left Row Annotations
-status <- rd$status[row_ord]
-
-true_logfc <- round(unique(rd$true_logFC), 2)
-sim_logfc  <- rd$sim_logFC[row_ord]
-obs_logfc  <- rd$obs_logFC[row_ord]
+status    <- rd$status[row_ord]
+sim_logfc <- rd$sim_logFC[row_ord]
+obs_logfc <- rd$obs_logFC[row_ord]
 
 max_logfc <- pmax(abs(sim_logfc), abs(obs_logfc), na.rm = TRUE)
 max_logfc <- max(max_logfc, na.rm = TRUE)
@@ -320,13 +370,10 @@ right_row_anno <- cmplx_anno(
 
 # Titles
 col_title <- unique(sapply(sce_obj$genotype[col_ord], function(g) {
-  sprintf("%s (n = %s)", g, table(sce_obj$genotype)[g])
+  sprintf("%s\n(n = %s)", g, table(sce_obj$genotype)[g])
 }))
 
-row_title <- sprintf(
-  "Genes with a center log2FC of ±%s (facLoc %s)", 
-  true_logfc, facLoc
-)
+row_title <- sprintf("Genes with facLoc %s", facLoc)
 
 # Heatmap 
 ht <- cmplx_ht(
@@ -505,7 +552,10 @@ theme_DK(
 )
 
 # Save
-ggplot2::ggsave(
+.ggsave <- fun_with_ram(ggplot2::ggsave)
+txt     <- sprintf("saved as %s", paste0(file_name, "_bx.svg"))
+
+.ggsave(
   p,
   file = file.path(
     output_path,
@@ -513,292 +563,6 @@ ggplot2::ggsave(
   ),
   width = 10,
   height = 10,
-  units = "cm"
-)
-
-## Demographics ===============================================================
-p_ncells <- ggplot2::ggplot(
-  data = as.data.frame(
-    SummarizedExperiment::colData(sce_obj)
-  ), 
-  mapping = ggplot2::aes(
-    x = sample, 
-    fill = group
-  )
-) +
-ggplot2::geom_bar(
-  position = "dodge", 
-  width = 0.6
-) +
-ggplot2::scale_fill_manual(
-  name = NULL,
-  values = c(
-    "targeting"     = wesanderson::wes_palette("Moonrise2")[3],
-    "non-targeting" = wesanderson::wes_palette("Moonrise2")[1]
-  )
-) +
-ggplot2::geom_text(
-  mapping = ggplot2::aes(
-    label = ggplot2::after_stat(count)
-  ),
-  position = ggplot2::position_dodge(
-    width = 0.6
-  ),
-  stat = "count",
-  vjust = -0.5,
-  size = 1.5
-) +
-ggplot2::scale_y_continuous(
-  expand = ggplot2::expansion(mult = c(0, 0.55)) 
-) +
-ggplot2::labs(
-  x = "Sample",
-  y = "Nr. of cells"
-) +
-theme_DK(
-  lgd_position = "inside.top.right",
-  show_grid = FALSE,
-  show_border = FALSE
-)
-
-p_ngenes <- ggplot2::ggplot(
-  data = as.data.frame(
-    SummarizedExperiment::rowData(sce_obj)
-  ), 
-  mapping = ggplot2::aes(
-    x = paste("sim. true logFC =", round(unique(rd$true_logFC))), 
-    fill = status
-    )
-  ) +
-ggplot2::geom_bar(
-  mapping = ggplot2::aes(
-    y = ggplot2::after_stat(count) / sum(ggplot2::after_stat(count))
-  ),
-  position = "dodge",
-  width = 0.6
-) +
-ggplot2::scale_fill_manual(
-  name = NULL,
-  values = c(
-    "Knockout"   = wesanderson::wes_palette("Chevalier1")[2],  
-    "Downstream" = wesanderson::wes_palette("Chevalier1")[4],  
-    "Background" = wesanderson::wes_palette("Chevalier1")[3]
-  )
-) +
-ggplot2::geom_text(
-  mapping = ggplot2::aes(
-    y = ggplot2::after_stat(count) / sum(ggplot2::after_stat(count)), 
-    label = ggplot2::after_stat(count) 
-  ),
-  stat = "count",
-  position = ggplot2::position_dodge(
-    width = 0.6
-  ),
-  vjust = -0.5, 
-  size = 1.5
-) +
-ggplot2::scale_y_continuous(
-  expand = ggplot2::expansion(mult = c(0, 0.55)),
-  labels = scales::percent
-) +
-ggplot2::labs(
-  x = "Gene status",
-  y = "Pct. of genes"
-
-) + 
-theme_DK(
-  lgd_position = "inside.top.right",
-  show_grid = FALSE,
-  show_border = FALSE,
-  show_ticks_x = FALSE
-)
-
-# Density
-rd  <- SummarizedExperiment::rowData(sce_obj)
-
-p_data <- data.frame(
-  status = rep(rd$status, 2),
-  logFC  = c(rd$sim_logFC, rd$obs_logFC),
-  source = rep(c("Sim.", "Obs."), each = nrow(rd))
-)
-p_data <- p_data[p_data$status != "Knockout", ]
-
-true_val       <- round(unique(rd$true_logFC), 2)
-true_val_label <- paste(round(true_val))
-vline_data <- data.frame(
-  status = "On-target",
-  x_pos  = c(true_val, -true_val)
-)
-
-true_val   <- unique(rd$true_logFC)
-vline_data <- data.frame(
-  status = "Downstream",
-  x_pos  = c(true_val, -true_val)
-)
-
-p_density <- ggplot2::ggplot(
-  data = p_data, 
-  mapping = ggplot2::aes(
-    x = logFC,
-    color = source,
-    fill = source
-  )
-) +
-ggplot2::geom_density(
-  alpha = 0.5
-) + 
-ggplot2::scale_fill_manual(
-  name = "log2FC",
-  values = c(
-    "Sim." = "firebrick3", 
-    "Obs." = "grey50"
-  )
-) +
-ggplot2::scale_color_manual(
-  name = "log2FC",
-  values = c(
-    "Sim." = "firebrick3", 
-    "Obs." = "grey50"
-  )
-) +
-ggplot2::geom_vline(
-  data = vline_data,
-  mapping = ggplot2::aes(
-    xintercept = x_pos, 
-    linetype = true_val_label
-  ),
-  color = "black",        
-  linewidth = 0.3,
-  inherit.aes = FALSE    
-) +
-ggplot2::scale_linetype_manual(
-  name = "Center",
-  values = setNames("dashed", true_val_label) 
-) +
-ggplot2::facet_wrap(
-  ~ status, 
-  scales = "free_y"
-) +
-ggplot2::labs(
-  x = "log2FC",
-  y = "Density",
-  fill = "Source"
-) +
-theme_DK(
-  lgd_position = "right",
-  show_grid = FALSE
-)
-
-# UMAP
-num_neighbors <- min(15, floor(ncol(sce_obj) / 2))
-sce_obj <- scater::runUMAP(sce_obj, n_neighbors = num_neighbors)
-
-p_data <- SingleCellExperiment::reducedDim(sce_obj, "UMAP")
-colnames(p_data) <- c("UMAP1", "UMAP2")
-p_data <- cbind(p_data, SingleCellExperiment::colData(sce_obj))
-p_data <- as.data.frame(p_data)
-
-p_sample <- ggplot2::ggplot(
-  data = p_data,
-  mapping = ggplot2::aes(
-    x = UMAP1, 
-    y = UMAP2, 
-    color = sample
-  )
-) +
-ggplot2::geom_point(
-  size = 0.1
-) +
-ggplot2::scale_color_manual(
-  values = c(
-    "mouse1" = wesanderson::wes_palette("Rushmore1")[3], 
-    "mouse2" = wesanderson::wes_palette("Rushmore1")[4], 
-    "mouse3" = wesanderson::wes_palette("Rushmore1")[5]
-  )
-) +
-ggplot2::scale_x_continuous(
-  labels = scales::label_number(accuracy = 1)
-) +
-ggplot2::scale_y_continuous(
-  labels = scales::label_number(accuracy = 1)
-) +
-ggplot2::facet_wrap(
-  ~ "Sample", 
-  scales = "free_y"
-) +
-ggplot2::labs(
-  x = "UMAP1",
-  y = "UMAP2",
-  color = "Sample"
-) + 
-theme_DK(
-  lgd_position = "inside.top.right",
-  show_grid = FALSE,
-  aspect.ratio = 1
-)
-
-p_genotype <- ggplot2::ggplot(
-  data = p_data, 
-  mapping = ggplot2::aes(
-    x = UMAP1, 
-    y = UMAP2, 
-    color = genotype
-  )
-) +
-ggplot2::geom_point(
-  size = 0.1
-) +
-ggplot2::scale_x_continuous(
-  labels = scales::label_number(accuracy = 1)
-) +
-ggplot2::scale_y_continuous(
-  labels = scales::label_number(accuracy = 1)
-) +
-ggplot2::facet_wrap(
-  ~ "Genotype", 
-  scales = "free_y"
-) +
-ggplot2::labs(
-  x = "UMAP1",
-  y = "UMAP2",
-  color = "Genotype"
-) + 
-theme_DK(
-  lgd_position = "inside.top.right",
-  show_grid = FALSE,
-  aspect.ratio = 1
-)
-
-# Patchwork
-p_umap <- patchwork::wrap_plots(
-  p_sample,
-  p_genotype
-)+ patchwork::plot_layout(
-  guides = "collect"
-) & 
-ggplot2::guides(
-  color = ggplot2::guide_legend(
-    override.aes = list(size = 0.5)
-  ) 
-)
-
-p <- p_ncells + p_umap + p_ngenes + p_density +
-  patchwork::plot_layout(
-    design = "
-      AB
-      CD
-    ",
-    widths = c(0.5, 1) 
-  )
-
-# Save
-ggplot2::ggsave(
-  p,
-  file = file.path(
-    output_path,
-    paste0(file_name, "_um.svg")
-  ),
-  width = 12,
-  height = 10,
-  units = "cm"
+  units = "cm",
+  info = txt
 )

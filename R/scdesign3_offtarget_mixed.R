@@ -25,7 +25,7 @@
 ## indication 'K' across genes.
 
 ## The mean of targeting cells are modified by modifying 'C' by sampling form
-## expression values from NTC cells (paper).
+## expression values from NTC cells (currently outdated).
 
 ## Then expression counts for each are sampled using the fitted paramters and 
 ## the gene-gene correlation matrix to generate a Perturb-Seq dataset.
@@ -36,36 +36,56 @@ set.seed(seed)
 
 ## Settings ===================================================================
 if (!interactive()) {
-  args <- commandArgs(trailingOnly = TRUE)
+  full_args  <- commandArgs(trailingOnly = FALSE)
+  trail_args <- commandArgs(trailingOnly = TRUE)
 
-  project_root <- args[1]
-  input_path   <- args[2]
+  # Commands
+  script_path <- sub("^--file=", "", grep("^--file=", full_args, value = TRUE)[1])
+  script_name <- tools::file_path_sans_ext(basename(script_path))
+
+  project_root <- trail_args[1]
+  input_path   <- trail_args[2]
   output_path  <- "."
-  family_use   <- "zinb"
 
   # Meta
-  facLoc <- as.numeric(args[3])
-  nOn    <- as.numeric(args[4])
-  koEff  <- as.numeric(args[5])
+  # celltype <- as.character(args[3])
+  # facLoc   <- as.numeric(args[4])
 
-  nBack  <- Inf
+  # Params
+  nOn    <- as.numeric(trail_args[5])
+  koEff  <- as.numeric(trail_args[6])
 
-  file_name <- paste0("scdesign3_facLoc_", facLoc, "_nOn_", nOn, "_koEff_", koEff)
+  family_use <- "zinb"
+  nBack      <- Inf
+
+  # Output file
+  input_name <- tools::file_path_sans_ext(basename(input_path))
+  file_name  <- paste0(input_name , "_nOn_", nOn, "_koEff_", koEff)
 
 } else {
-  project_root <- "/home/scc_e_928652/ArcSimulationSynthetic"
-  input_path   <- "results/manual/splatter/splatter_facLoc_2.h5ad"
-  output_path  <- "results/manual/ArcSimSyn_offtarget_mixed/scdesign3"
-  family_use   <- "zinb"
+  # Commands
+  script_path  <- rstudioapi::getActiveDocumentContext()$path
+  script_name  <- tools::file_path_sans_ext(basename(script_path))
 
-  # Meta
-  facLoc <- 2
+  project_root <- "/home/scc_e_928652/ArcSimulationSynthetic"
+  input_path   <- "results/manual/ArcSimSyn_offtarget_mixed/splatter/celltype_Gran. P_facLoc_2.h5ad"
+  output_path  <- file.path("results/manual/ArcSimSyn_offtarget_mixed", script_name)
+  stopifnot(dirname(dirname(input_path)) == dirname(output_path))
+
+  # Meta 
+  # celltype <- "Gran. P"
+  # facLoc   <- 2
+
+  # Params
   nOn    <- 10
   koEff  <- 100
 
-  nBack  <- 10
+  family_use <- "zinb"
+  nBack      <- 10
 
-  file_name <- paste0("scdesign3_facLoc_", facLoc, "_nOn_", nOn, "_koEff_", koEff)
+  # Output file
+  input_name <- tools::file_path_sans_ext(basename(input_path))
+  file_name  <- paste0(input_name , "_nOn_", nOn, "_koEff_", koEff)
 }
 
 ## r-utils ====================================================================
@@ -86,15 +106,27 @@ script_startup(
 )
 
 ## Dataset ====================================================================
+.read_rds  <- fun_with_ram(base::readRDS)
 .read_h5ad <- fun_with_ram(anndataR::read_h5ad)
 
-txt     <- sprintf("'%s' as 'SingleCellExperiment'", input_path)
-sce_obj <- .read_h5ad(input_path, as = "SingleCellExperiment", info = txt)
+ext <- tools::file_ext(input_path)
+txt <- sprintf("%s as 'SingleCellExperiment'", input_path)
 
-# Create C, Y, K
+sce_obj <- switch(EXPR = ext,
+  rds  = .read_rds(input_path, info = txt),
+  h5ad = .read_h5ad(input_path, as = "SingleCellExperiment", info = txt),
+  showf("Unsupported file extension: %s", ext, type = "stop")
+)
+
+# Gene truth (pipeline)
 sce_rd <- SingleCellExperiment::rowData(sce_obj)
 sce_rd <- as.data.frame(sce_rd)
 
+# Meta
+celltype <- unique(sce_rd$celltype)
+facLoc   <- unique(sce_rd$facLoc)
+
+## scDesign3 ==================================================================
 knockout <- sce_rd$gene[sce_rd$status == "Knockout"]
 
 counts <- SingleCellExperiment::counts(sce_obj)
@@ -118,7 +150,6 @@ sce_obj <- SingleCellExperiment::SingleCellExperiment(
   )
 )
 
-# Select genes (demo purpose)
 # Downstream genes
 genes_downstream  <- sce_rd$gene[sce_rd$status == "Downstream"]
 downstream_reads  <- sce_rd$total_reads[sce_rd$status == "Downstream"]
@@ -127,7 +158,6 @@ sorted_downstream <- genes_downstream[order(downstream_reads, decreasing = TRUE)
 # On- & off-target
 genes_downstream <- sorted_downstream[1:nOn]
 genes_off_target <- sorted_downstream[(nOn + 1):(nOn + nOn)]
-
 stopifnot(!any(genes_downstream %in% genes_off_target))
 
 # Background
@@ -137,7 +167,7 @@ genes_background <- genes_background[order(background_reads, decreasing = TRUE)]
 
 genes_background <- genes_background[1:min(nBack, length(genes_background))]
 
-## scDesign3 ==================================================================
+## Marginals ==================================================================
 .estimate_marginals <- fun_with_ram(estimate_marginals)
 
 txt <- sprintf("on-target downstream: conditioned by %s expression 'C' and sample info 'I'", knockout)
@@ -199,27 +229,16 @@ marg_background <- .estimate_marginals(
   verbose = FALSE,
   info = txt
 )
- 
+
 # Validate marginals
 marg_on_downstream  <- marg_on_downstream[sapply(marg_on_downstream, function(x) .is_valid_fit(x$fit))]
 marg_off_downstream <- marg_off_downstream[sapply(marg_off_downstream, function(x) .is_valid_fit(x$fit))]
 marg_off_background <- marg_off_background[sapply(marg_off_background, function(x) .is_valid_fit(x$fit))]
-marg_background <- marg_background[sapply(marg_background, function(x) .is_valid_fit(x$fit))]
+marg_background     <- marg_background[sapply(marg_background, function(x) .is_valid_fit(x$fit))]
 
 ## Build complete marginal sets ===============================================
-# On target
-marg_on <- c(
-  marg_on_downstream,
-  marg_off_background,
-  marg_background
-)
-
-# Off target
-marg_off <- c(
-  marg_on_downstream,
-  marg_off_downstream,
-  marg_background
-)
+marg_on  <- c(marg_on_downstream, marg_off_background, marg_background)
+marg_off <- c(marg_on_downstream, marg_off_downstream, marg_background)
 
 ## Correlation ================================================================
 .estimate_correlation <- fun_with_ram(estimate_correlation)
@@ -239,25 +258,34 @@ copula <- .estimate_correlation(
 ## Modify C (intervention) ====================================================
 .modify_covariate <- fun_with_ram(modify_covariate)
 
+txt <- "modifying cells for on-target effect"
 new_cov_on <- .modify_covariate(
   sce_obj = sce_obj[names(marg_on), ],
   covariates = c("C", "K", "I", "K_I"),
   corr_by = "K_I",       
-  ko_eff = koEff
+  ko_eff = koEff,
+  mode = "partial",
+  info = txt
 )
 
+txt <- "modifying cells for off-target effect"
 new_cov_off <- .modify_covariate(
   sce_obj = sce_obj[names(marg_off), ],
   covariates = c("C", "K", "I", "K_I"),
   corr_by = "K_I",      
-  ko_eff = koEff
+  ko_eff = koEff,
+  mode = "partial",
+  info = txt
 )
 
+txt <- "modifying cells for non-targeting control"
 new_cov_ntc <- .modify_covariate(
   sce_obj = sce_obj[names(marg_on), ],
   covariates = c("C", "K", "I", "K_I"),
   corr_by = "K_I",      
-  ko_eff = NULL
+  ko_eff = NULL,
+  mode = "partial",
+  info = txt
 )
 
 ## Parameters ==================================================================
@@ -297,6 +325,7 @@ params_ntc <- .extract_params(
 .sim_pipe <- fun_with_ram(sim_pipe)
 
 # On-target guide 1
+txt <- "simulating cells for on-target guide 1"
 sim_tar_on_1 <- .sim_pipe(
   sce_obj = sce_obj[names(marg_on), ],
   celltype = "celltype",
@@ -306,7 +335,8 @@ sim_tar_on_1 <- .sim_pipe(
   corr_by = "K_I",
   family_use = family_use,
   new_covariate = new_cov_on[new_cov_on$K == "1", , drop = FALSE],
-  knockout = knockout
+  knockout = knockout,
+  info = txt
 )
 
 sim_tar_on_1$group     <- "targeting"
@@ -315,6 +345,7 @@ sim_tar_on_1$guide     <- paste0(knockout, "-On1")
 sim_tar_on_1$on_target <- TRUE
 
 # On-target guide 2
+txt <- "simulating cells for on-target guide 2"
 sim_tar_on_2 <- .sim_pipe(
   sce_obj = sce_obj[names(marg_on), ],
   celltype = "celltype",
@@ -324,7 +355,8 @@ sim_tar_on_2 <- .sim_pipe(
   corr_by = "K_I",
   family_use = family_use,
   new_covariate = new_cov_on[new_cov_on$K == "1", , drop = FALSE],
-  knockout = knockout
+  knockout = knockout,
+  info = txt
 )
 
 sim_tar_on_2$group     <- "targeting"
@@ -333,6 +365,7 @@ sim_tar_on_2$guide     <- paste0(knockout, "-On2")
 sim_tar_on_2$on_target <- TRUE
 
 # Off-target guide
+txt <- "simulating cells for off-target guide 1"
 sim_tar_off <- .sim_pipe(
   sce_obj = sce_obj[names(marg_off), ],
   celltype = "celltype",
@@ -342,7 +375,8 @@ sim_tar_off <- .sim_pipe(
   corr_by = "K_I",
   family_use = family_use,
   new_covariate = new_cov_off[new_cov_off$K == "1", , drop = FALSE],
-  knockout = knockout
+  knockout = knockout,
+  info = txt
 )
 
 sim_tar_off$group     <- "targeting"
@@ -350,6 +384,8 @@ sim_tar_off$genotype  <- knockout
 sim_tar_off$guide     <- paste0(knockout, "-Off1")
 sim_tar_off$on_target <- FALSE
 
+# Non-targeting guide
+txt <- "simulating cells for NTC guide 1"
 sim_ntc <- .sim_pipe(
   sce_obj = sce_obj[names(marg_on), ],
   celltype = "celltype",
@@ -359,7 +395,8 @@ sim_ntc <- .sim_pipe(
   corr_by = "K_I",
   family_use = family_use,
   new_covariate = new_cov_ntc[new_cov_ntc$K == "0", , drop = FALSE],
-  knockout = knockout
+  knockout = knockout,
+  info = txt
 )
 
 sim_ntc$group     <- "non-targeting"
@@ -370,11 +407,11 @@ sim_ntc$on_target <- TRUE
 ## Observed annotations =======================================================
 sce_obj <- BiocGenerics::cbind(sim_ntc, sim_tar_on_1, sim_tar_on_2, sim_tar_off)
 
-sce_rd_new  <- sce_rd[rownames(sce_obj), , drop = FALSE]
+sce_rd_new <- sce_rd[rownames(sce_obj), , drop = FALSE]
 
-sce_rd_new$sim_mode <- "mixed guides"
-sce_rd_new$nOn      <- nOn
-sce_rd_new$koEff    <- koEff
+sce_rd_new$guide_mode <- "mixed guides"
+sce_rd_new$nOn        <- nOn
+sce_rd_new$koEff      <- koEff
 
 # Log counts
 sce_obj <- scater::logNormCounts(sce_obj)
@@ -519,9 +556,7 @@ bottom_col_anno <- cmplx_anno(
 )
 
 # Left Row Annotations
-status <- rd$status[row_ord]
-
-true_logfc <- round(unique(rd$true_logFC), 2)
+status     <- rd$status[row_ord]
 sim_logfc  <- rd$sim_logFC[row_ord]
 obs_logfc  <- rd$obs_logFC[row_ord]
 
@@ -567,13 +602,10 @@ right_row_anno <- cmplx_anno(
 
 # Titles
 col_title <- unique(sapply(sce_obj$genotype[col_ord], function(g) {
-  sprintf("%s (n = %s)", g, table(sce_obj$genotype)[g])
+  sprintf("%s\n(n = %s)", g, table(sce_obj$genotype)[g])
 }))
 
-row_title <- sprintf(
-  "Genes with a center log2FC of ±%s (facLoc %s) and\na knockout efficiencey of %s%%", 
-  true_logfc, facLoc, koEff
-)
+row_title <- sprintf("Genes with a facLoc %s and\na knockout efficiencey of %s%%", facLoc, koEff)
 
 # Heatmap 
 ht <- cmplx_ht(
@@ -761,7 +793,10 @@ theme_DK(
 )
 
 # Save
-ggplot2::ggsave(
+.ggsave <- fun_with_ram(ggplot2::ggsave)
+txt     <- sprintf("saved as %s", paste0(file_name, "_bx.svg"))
+
+.ggsave(
   p,
   file = file.path(
     output_path,
@@ -769,361 +804,6 @@ ggplot2::ggsave(
   ),
   width = 10,
   height = 10,
-  units = "cm"
+  units = "cm",
+  info = txt
 )
-
-## Demographics ===============================================================
-p_ncells <- ggplot2::ggplot(
-  data = as.data.frame(
-    SummarizedExperiment::colData(sce_obj)
-  ), 
-  mapping = ggplot2::aes(
-    x = sample, 
-    fill = guide
-  )
-) +
-ggplot2::geom_bar(
-  position = "dodge", 
-  width = 0.6
-) +
-ggplot2::scale_fill_manual(
-  name = NULL,
-  values = col_guides
-) +
-ggplot2::geom_text(
-  mapping = ggplot2::aes(
-    label = ggplot2::after_stat(count)
-  ),
-  position = ggplot2::position_dodge(
-    width = 0.6
-  ),
-  stat = "count",
-  angle = 90,    
-  hjust = -0.2,  
-  vjust = 0.5,  
-  size = 1.5
-) +
-ggplot2::scale_y_continuous(
-  expand = ggplot2::expansion(mult = c(0, 0.55)) 
-) +
-ggplot2::labs(
-  x = "Sample",
-  y = "Nr. of cells"
-) +
-theme_DK(
-  lgd_position = "inside.top.right",
-  show_grid = FALSE,
-  show_border = FALSE
-)
-
-p_ngenes <- ggplot2::ggplot(
-  data = as.data.frame(
-    SummarizedExperiment::rowData(sce_obj)
-  ), 
-  mapping = ggplot2::aes(
-    x = paste("sim. true logFC =", round(unique(rd$true_logFC))), 
-    fill = factor(status, levels = c("Background", "On-target", "Off-target", "Knockout"))
-  )
-) +
-ggplot2::geom_bar(
-  mapping = ggplot2::aes(
-    y = ggplot2::after_stat(count) / sum(ggplot2::after_stat(count))
-  ),
-  position = "dodge",
-  width = 0.6
-) +
-ggplot2::scale_fill_manual(
-  name = NULL,
-  values = c(
-    "Knockout"   = wesanderson::wes_palette("Chevalier1")[2],  
-    "On-target"  = wesanderson::wes_palette("Chevalier1")[4],
-    "Off-target" = wesanderson::wes_palette("Chevalier1")[1],
-    "Background" = wesanderson::wes_palette("Chevalier1")[3]
-  ),
-) +
-ggplot2::geom_text(
-  mapping = ggplot2::aes(
-    y = ggplot2::after_stat(count) / sum(ggplot2::after_stat(count)), 
-    label = ggplot2::after_stat(count) 
-  ),
-  stat = "count",
-  position = ggplot2::position_dodge(
-    width = 0.6
-  ),
-  vjust = -0.5, 
-  size = 1.5
-) +
-ggplot2::scale_y_continuous(
-  expand = ggplot2::expansion(mult = c(0, 0.55)),
-  labels = scales::percent
-) +
-ggplot2::labs(
-  x = "Gene status",
-  y = "Pct. of genes"
-
-) + 
-theme_DK(
-  lgd_position = "inside.top.right",
-  show_grid = FALSE,
-  show_border = FALSE,
-  show_ticks_x = FALSE
-)
-
-# Density
-rd  <- SummarizedExperiment::rowData(sce_obj)
-
-p_data <- data.frame(
-  status = rep(rd$status, 2),
-  logFC  = c(rd$sim_logFC, rd$obs_logFC),
-  source = rep(c("Sim.", "Obs."), each = nrow(rd))
-)
-p_data <- p_data[p_data$status != "Knockout", ]
-
-true_val       <- round(unique(rd$true_logFC), 2)
-true_val_label <- paste(round(true_val))
-vline_data <- data.frame(
-  status = "On-target",
-  x_pos  = c(true_val, -true_val)
-)
-
-p_density <- ggplot2::ggplot(
-  data = p_data, 
-  mapping = ggplot2::aes(
-    x = logFC,
-    color = source,
-    fill = source
-  )
-) +
-ggplot2::geom_density(
-  alpha = 0.5
-) + 
-ggplot2::scale_fill_manual(
-  name = "log2FC",
-  values = c(
-    "Sim." = "firebrick3", 
-    "Obs." = "grey50"
-  )
-) +
-ggplot2::scale_color_manual(
-  name = "log2FC",
-  values = c(
-    "Sim." = "firebrick3", 
-    "Obs." = "grey50"
-  )
-) +
-ggplot2::geom_vline(
-  data = vline_data,
-  mapping = ggplot2::aes(
-    xintercept = x_pos, 
-    linetype = true_val_label
-  ),
-  color = "black",        
-  linewidth = 0.3,
-  inherit.aes = FALSE    
-) +
-ggplot2::scale_linetype_manual(
-  name = "Center",
-  values = setNames("dashed", true_val_label) 
-) +
-ggplot2::facet_wrap(
-  ~ status, 
-  scales = "free_y"
-) +
-ggplot2::labs(
-  x = "log2FC",
-  y = "Density",
-  fill = "Source"
-) +
-theme_DK(
-  lgd_position = "right",
-  show_grid = FALSE
-)
-
-# UMAP
-num_neighbors <- min(15, floor(ncol(sce_obj) / 2))
-sce_obj <- scater::runUMAP(sce_obj, n_neighbors = num_neighbors)
-
-p_data <- SingleCellExperiment::reducedDim(sce_obj, "UMAP")
-colnames(p_data) <- c("UMAP1", "UMAP2")
-p_data <- cbind(p_data, SingleCellExperiment::colData(sce_obj))
-p_data <- as.data.frame(p_data)
-
-p_sample <- ggplot2::ggplot(
-  data = p_data, 
-  mapping = ggplot2::aes(
-    x = UMAP1, 
-    y = UMAP2, 
-    color = sample
-  )
-) +
-ggplot2::geom_point(
-  size = 0.1
-) +
-ggplot2::scale_color_manual(
-  values = c(
-    "mouse1" = wesanderson::wes_palette("Rushmore1")[3],
-    "mouse2" = wesanderson::wes_palette("Rushmore1")[4],
-    "mouse3" = wesanderson::wes_palette("Rushmore1")[5]
-  )
-) +
-ggplot2::scale_x_continuous(
-  labels = scales::label_number(accuracy = 1)
-) +
-ggplot2::scale_y_continuous(
-  labels = scales::label_number(accuracy = 1)
-) +
-ggplot2::facet_wrap(
-  ~ "Sample", 
-  scales = "free_y"
-) +
-ggplot2::labs(
-  x = "UMAP1",
-  y = "UMAP2",
-  color = "Sample"
-) + 
-theme_DK(
-  lgd_position = "inside.top.right",
-  show_grid = FALSE,
-  aspect.ratio = 1
-)
-
-p_genotype <- ggplot2::ggplot(
-  data = p_data, 
-  mapping = ggplot2::aes(
-    x = UMAP1, 
-    y = UMAP2, 
-    color = genotype
-  )
-) +
-ggplot2::geom_point(
-  size = 0.1
-) +
-ggplot2::scale_x_continuous(
-  labels = scales::label_number(accuracy = 1)
-) +
-ggplot2::scale_y_continuous(
-  labels = scales::label_number(accuracy = 1)
-) +
-ggplot2::facet_wrap(
-  ~ "Genotype", 
-  scales = "free_y"
-) +
-ggplot2::labs(
-  x = "UMAP1",
-  y = "UMAP2",
-  color = "Genotype"
-) + 
-theme_DK(
-  lgd_position = "inside.top.right",
-  show_grid = FALSE,
-  aspect.ratio = 1
-)
-
-p_guide <- ggplot2::ggplot(
-  data = p_data, 
-  mapping = ggplot2::aes(
-    x = UMAP1, 
-    y = UMAP2, 
-    color = guide
-  )
-) +
-ggplot2::geom_point(
-  size = 0.1
-) +
-ggplot2::scale_color_manual(
-  values = col_guides
-) + 
-ggplot2::scale_x_continuous(
-  labels = scales::label_number(accuracy = 1)
-) +
-ggplot2::scale_y_continuous(
-  labels = scales::label_number(accuracy = 1)
-) +
-ggplot2::facet_wrap(
-  ~ "Guides", 
-  scales = "free_y"
-) +
-ggplot2::labs(
-  x = "UMAP1",
-  y = "UMAP2",
-  color = "Guides"
-) + 
-theme_DK(
-  lgd_position = "inside.top.right",
-  show_grid = FALSE,
-  aspect.ratio = 1
-)
-
-p_on_target <- ggplot2::ggplot(
-  data = p_data, 
-  mapping = ggplot2::aes(
-    x = UMAP1, 
-    y = UMAP2, 
-    color = on_target
-  )
-) +
-ggplot2::geom_point(
-  size = 0.1
-) +
-ggplot2::scale_x_continuous(
-  labels = scales::label_number(accuracy = 1)
-) +
-ggplot2::scale_y_continuous(
-  labels = scales::label_number(accuracy = 1)
-) +
-ggplot2::scale_color_manual(
-  values = c(
-    "TRUE"  = wesanderson::wes_palette("Moonrise3")[1],
-    "FALSE" = wesanderson::wes_palette("Moonrise3")[2]
-  )
-) +
-ggplot2::facet_wrap(
-  ~ "On-target", 
-  scales = "free_y"
-) +
-ggplot2::labs(
-  x = "UMAP1",
-  y = "UMAP2",
-  color = "On-target"
-) + 
-theme_DK(
-  lgd_position = "inside.top.right",
-  show_grid = FALSE,
-  aspect.ratio = 1
-)
-
-p_umap <- patchwork::wrap_plots(
-  p_sample,
-  p_genotype,
-  p_on_target,
-  p_guide
-) + patchwork::plot_layout(
-  guides = "collect"
-) & 
-ggplot2::guides(
-  color = ggplot2::guide_legend(
-    override.aes = list(size = 0.5)
-  ) 
-)
-
-p <- p_ncells + p_umap + p_ngenes + p_density +
-  patchwork::plot_layout(
-    design = "
-      AB
-      CD
-    ",
-    widths = c(0.5, 1) 
-  )
-
-# Save
-ggplot2::ggsave(
-  p,
-  file = file.path(
-    output_path,
-    paste0(file_name, "_um.svg")
-  ),
-  width = 12,
-  height = 10,
-  units = "cm"
-)
-

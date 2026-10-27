@@ -6,6 +6,7 @@ process nebula {
 
     input:
     path data
+    val celltype
     val facLoc
     val nOn
     val koEff
@@ -14,14 +15,14 @@ process nebula {
     val ref
     
     output:
-    tuple path("nebula_facLoc_${facLoc}_nOn_${nOn}_koEff_${koEff}_nGuide_${nGuide}_${formula}_fit.rds"), 
-          path("nebula_facLoc_${facLoc}_nOn_${nOn}_koEff_${koEff}_nGuide_${nGuide}_${formula}_dge.rds")
+    path("celltype_${celltype}_facLoc_${facLoc}_nOn_${nOn}_koEff_${koEff}_nGuide_${nGuide}_${formula}_dge.rds")
     
     script:
     """
     Rscript ${workflow.launchDir}/R/nebula.R \
         "${workflow.launchDir}" \
         "${data}" \
+        "${celltype}" \
         "${facLoc}" \
         "${nOn}" \
         "${koEff}" \

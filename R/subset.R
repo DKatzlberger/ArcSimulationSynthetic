@@ -10,34 +10,52 @@ set.seed(seed)
 
 ## Settings ===================================================================
 if (!interactive()) {
-  args <- commandArgs(trailingOnly = TRUE)
+  full_args  <- commandArgs(trailingOnly = FALSE)
+  trail_args <- commandArgs(trailingOnly = TRUE)
 
-  project_root <- args[1]
-  input_path   <- args[2]
+  # Commands
+  script_path <- sub("^--file=", "", grep("^--file=", full_args, value = TRUE)[1])
+  script_name <- tools::file_path_sans_ext(basename(script_path))
+
+  project_root <- trail_args[1]
+  input_path   <- trail_args[2]
   output_path  <- "."
 
   # Meta
-  facLoc <- args[3]
-  nOn    <- args[4]
-  koEff  <- args[5]
-  nGuide <- as.numeric(args[6])
+  # celltype <- as.character(trail_args[3])
+  # facLoc   <- as.numeric(trail_args[4])
+  # nOn      <- as.numeric(trail_args[5])
+  # koEff    <- as.numeric(trail_args[6])
 
-  file_name <- paste0("subset_facLoc_", facLoc, "_nOn_", nOn, "_koEff_", koEff, "_nGuide_", nGuide)
+  # Params
+  nGuide <- as.numeric(args[7])
+
+  # Output file
+  input_name <- tools::file_path_sans_ext(basename(input_path))
+  file_name  <- paste0(input_name, "_nGuide_", nGuide)
 
 } else {
-  project_root <- "/home/scc_e_928652/ArcSimulationSynthetic"
-  input_path   <- "results/manual/offtarget_mixed/scdesign3/scdesign3_facLoc_2_nOn_10_koEff_25.h5ad"
-  output_path  <- "results/manual/offtarget_mixed/subset"
+  # Commands
+  script_path  <- rstudioapi::getActiveDocumentContext()$path
+  script_name  <- tools::file_path_sans_ext(basename(script_path))
 
+  project_root <- "/home/scc_e_928652/ArcSimulationSynthetic"
+  input_path   <- "results/manual/ArcSimSyn_offtarget_mixed/scdesign3/celltype_Gran. P_facLoc_2_nOn_10_koEff_100.h5ad"
+  output_path  <- file.path("results/manual/ArcSimSyn_offtarget_mixed", script_name)
   stopifnot(dirname(dirname(input_path)) == dirname(output_path))
 
   # Meta
-  facLoc <- 2
-  nOn    <- 10
-  koEff  <- 25
-  nGuide <- 50
+  # celltype <- "Gran. P"
+  # facLoc   <- 2
+  # nOn      <- 10
+  # koEff    <- 25
 
-  file_name <- paste0("subset_facLoc_", facLoc, "_nOn_", nOn, "_koEff_", koEff, "_nGuide_", nGuide)
+  # Params
+  nGuide <- 300
+
+  # Output file
+  input_name <- tools::file_path_sans_ext(basename(input_path))
+  file_name  <- paste0(input_name, "_nGuide_", nGuide)
 }
 
 ## r-utils ====================================================================
@@ -57,14 +75,27 @@ script_startup(
 )
 
 ## Dataset ====================================================================
+.read_rds  <- fun_with_ram(base::readRDS)
 .read_h5ad <- fun_with_ram(anndataR::read_h5ad)
 
-txt     <- sprintf("%s as 'SingleCellExperiment'", input_path)
-sce_obj <- .read_h5ad(input_path, as = "SingleCellExperiment", info = txt)
+ext <- tools::file_ext(input_path)
+txt <- sprintf("%s as 'SingleCellExperiment'", input_path)
 
-# Gene truths (simulations)
+sce_obj <- switch(EXPR = ext,
+  rds  = .read_rds(input_path, info = txt),
+  h5ad = .read_h5ad(input_path, as = "SingleCellExperiment", info = txt),
+  showf("Unsupported file extension: %s", ext, type = "stop")
+)
+
+# Gene truth (pipeline)
 sce_rd <- SingleCellExperiment::rowData(sce_obj)
 sce_rd <- as.data.frame(sce_rd)
+
+# Meta
+celltype <- unique(sce_rd$celltype)
+facLoc   <- unique(sce_rd$facLoc)
+nOn      <- unique(sce_rd$nOn)
+koEff    <- unique(sce_rd$koEff)
 
 ## Subset =====================================================================
 cells_ntc <- which(sce_obj$group == "non-targeting")
