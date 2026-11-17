@@ -5,16 +5,20 @@
 ## Date: 21.01.2026
 
 ## Log/Printing ===============================================================
+line80 <- function(x, char = "=") {
+  paste(x, strrep(char, times = max(1, 78 - nchar(x))))
+}
 
 showf <- function(fmt, ..., type = c(
   "message", "print", "cat", "warning", "stop"
 )) {
   type   <- match.arg(type)
+
   txt    <- sprintf(fmt, ...)
   caller <- sys.call(-1L)
 
   switch(
-    type,
+    EXPR = type,
     message = message(txt),
     print   = print(txt),
     cat     = cat(txt),
@@ -316,6 +320,38 @@ script_startup <- function(
 }
 
 ## CRISPR =====================================================================
+check_obj <- function(obj) {
+
+  # Class
+  obj_class <- paste(class(obj), collapse = ", ")
+  dims <- dim(obj)
+
+  showf(fmt = "Obj.: %s", obj_class, type = "message")
+
+  if (!is.null(dims) && length(dims) == 2) {
+    showf(fmt = "Dim.: %s genes x %s cells", dims[1], dims[2], type = "message")
+  }
+
+  # Extract metadata
+  if (inherits(obj, "SingleCellExperiment")) {
+    metadata <- as.data.frame(SummarizedExperiment::colData(obj))
+  } else if (inherits(obj, "Seurat")) {
+    metadata <- as.data.frame(obj@meta.data)
+  } else {
+    showf("Unsupported object class.", type = "stop")
+  }
+
+  # Required columns
+  required_cols <- c("sample", "celltype", "guide")
+  missing_cols  <- setdiff(required_cols, colnames(metadata))
+
+  if (length(missing_cols)) {
+    showf("Missing required metadata columns: %s", paste(missing_cols, collapse = ", "), type = "stop")
+  }
+
+  invisible(TRUE)
+}
+
 assign_guide_by_max_count <- function(
   obj,
   assay = "CRISPR",
@@ -325,6 +361,9 @@ assign_guide_by_max_count <- function(
 
   # Extract crispr counts
   counts <- obj@assays[[assay]]$counts
+
+  # Warning: fun overwrites existing guide col
+  if ("guide" %in% colnames(obj[[]])) showf("Existing 'guide' assignment will be overwritten.", type = "warning")
 
   # Assign guides
   obj$guide <- apply(counts, 2, function(x) {
@@ -344,9 +383,7 @@ assign_guide_by_max_count <- function(
   genotypes_per_guide <- tapply(obj$genotype[valid_cells], obj$guide[valid_cells], function(x) length(unique(x)))
   problematic_guides  <- names(genotypes_per_guide[genotypes_per_guide > 1])
 
-  if (length(problematic_guides) > 0) {
-    showf("Identical guides were assigned to different genotypes", type = "stop")
-  }
+  if (length(problematic_guides) > 0) showf("Identical guides were assigned to different genotypes", type = "stop")
   
   # Verbose
   n_valid_cells <- sum(!is.na(obj$guide))
@@ -449,11 +486,11 @@ make_extra_cov_df <- function(
 }
 
 ## scDesign3 ==================================================================
-.is_valid_fit <- function(fit) {
+is_valid_fit <- function(fit) {
   !is.null(fit) && inherits(fit, c("gamlss", "gam", "glm", "lm"))
 }
 
-.model_family <- function(
+model_family <- function(
   fit
 ){
 
@@ -480,7 +517,7 @@ make_extra_cov_df <- function(
   fam
 }
 
-.get_predictors <- function(fit) {
+get_predictors <- function(fit) {
 
   coefs <- tryCatch(coef(fit), error = function(e) NULL)
   coefs <- coefs[setdiff(names(coefs), "(Intercept)")]
@@ -534,13 +571,13 @@ estimate_marginals <- function(
   if (verbose) { 
     for (g in names(marginals)) {
 
-      if (!.is_valid_fit(marginals[[g]]$fit)) {
+      if (!is_valid_fit(marginals[[g]]$fit)) {
         message(sprintf("%-15s -> failed", g)) 
         next
       }
 
-      fam <- .model_family(marginals[[g]]$fit)
-      pre <- .get_predictors(marginals[[g]]$fit)
+      fam <- model_family(marginals[[g]]$fit)
+      pre <- get_predictors(marginals[[g]]$fit)
       message(sprintf("%-15s -> fam: %-10s | covariate: %s", g, fam, pre))
     }
   }
@@ -556,6 +593,7 @@ estimate_correlation <- function(
   covariates,
   corr_by,
   copula,
+  corr_features = "all",
   family_use,
   n_cores = 1,
   verbose = TRUE
@@ -581,6 +619,7 @@ estimate_correlation <- function(
     family_use = family_use,
     copula = copula,
     DT = FALSE,
+    important_feature = corr_features,
     n_cores = n_cores
   )
 
@@ -733,7 +772,7 @@ extract_params <- function(
   params
 }
 
-.simulate_counts <- function(
+simulate_counts <- function(
   sce_obj,
   covariates,
   celltype = "celltype",
@@ -813,12 +852,12 @@ sim_pipe <- function(
   }
 
   # Simulate count matrix
-  counts <- .simulate_counts(
+  counts <- simulate_counts(
     sce_obj = sce_obj,
     celltype = celltype,
     covariates = covariates,
     params = params,
-    copulas = copula,
+    copulas = copulas,
     corr_by = corr_by,
     family_use = family_use,
     new_covariate = new_covariate,
@@ -840,9 +879,7 @@ sim_pipe <- function(
   n_cells     <- ncol(counts)
   nucleotides <- c("A", "C", "G", "T")
 
-  barcodes <- replicate(n_cells, {
-    paste0(sample(nucleotides, 18, replace = TRUE), collapse = "")
-  })
+  barcodes <- replicate(n_cells, {paste0(sample(nucleotides, 18, replace = TRUE), collapse = "")})
   barcodes <- paste0(barcodes, "-1")
 
   colnames(counts) <- barcodes
@@ -864,6 +901,20 @@ sim_pipe <- function(
 
   # Return
   sce_obj
+}
+
+filter_library_size <- function(
+    sce_obj,
+    max_lib_size,
+    min_lib_size = 0
+) {
+    lib_size  <- Matrix::colSums(SummarizedExperiment::assay(sce_obj, "counts"))
+    keep      <- lib_size <= max_lib_size & lib_size >= min_lib_size
+    n_removed <- sum(!keep)
+
+    showf("Cells removed: %d", n_removed, type = "message")
+
+    sce_obj[, keep]
 }
 
 ## DGE analysis ===============================================================
@@ -1235,57 +1286,77 @@ extract_seurat <- function(
 
 extract_scmageck <- function(
   fit,
+  input_ids,
   intercept = FALSE,
   adjust_p = TRUE,
   adjust_m = "BH"
-){
+) {
+
+  .match_scmageck_ids <- function(ids, reference) {
+
+    unmatched <- !ids %in% reference
+    if (!any(unmatched)) return(ids)
+
+    # Reverse observed make.names() conversions
+    candidates <- make.names(reference, unique = FALSE)
+    n_matches  <- vapply(ids[unmatched], function(x) sum(candidates == x), integer(1))
+    if (any(n_matches > 1L)) showf(fmt = "Ambiguous mapping for %s scMAGeCK IDs.", sum(n_matches > 1L), type = "stop")
+
+    # Match scMAGeCK IDs against converted input IDs
+    idx <- match(ids[unmatched], candidates)
+    if (anyNA(idx)) showf(fmt = "Unable to map %s scMAGeCK IDs to input IDs.", sum(is.na(idx)), type = "stop")
+    
+    # Restore original input IDs
+    ids[unmatched] <- reference[idx]
+    if (anyDuplicated(ids)) showf(fmt = "ID mapping produced duplicated input IDs.", type = "stop")
+
+    # Return
+    showf(fmt = "Successfully mapped all IDs.", type = "message")
+    ids
+  }
 
   score <- fit$score
   pval  <- fit$pvalue
 
-  # coefficients (= perturbations)
   coefs <- score$Perturbedgene
+  if (!intercept) coefs <- setdiff(coefs, "NegCtrl")
+  
+  score_genes <- setdiff(colnames(score), "Perturbedgene")
+  pval_genes  <- setdiff(colnames(pval), "Perturbedgene")
 
-  # Remove NegCtrl unless requested (analogous to removing Intercept)
-  if (!intercept) {
-    coefs <- setdiff(coefs, "NegCtrl")
-  }
+  # Ensure score and p-value matrices have identical feature names
+  if (!identical(score_genes, pval_genes)) showf("IDs differ between score and p-value matrices.", type = "stop")
 
-  # Response genes
-  genes <- setdiff(colnames(score), "Perturbedgene")
+  # Restore input identifiers only when necessary
+  genes <- .match_scmageck_ids(ids = score_genes, reference = input_ids)
 
   out <- do.call(
     rbind,
-    lapply(coefs, function(coef){
+    lapply(coefs, function(coef) {
 
       idx <- match(coef, score$Perturbedgene)
 
-      res <- data.frame(
+      data.frame(
         coef = coef,
         gene = genes,
-        logFC = as.numeric(score[idx, genes]),
+        logFC = as.numeric(score[idx, score_genes]),
         se = NA_real_,
-        pvalue = as.numeric(pval[idx, genes]),
+        pvalue = as.numeric(pval[idx, pval_genes]),
         stringsAsFactors = FALSE
       )
-
-      res
     })
   )
 
-  # Optionally adjust p-values
   if (adjust_p) {
     out$FDR <- ave(
       out$pvalue,
       out$coef,
-      FUN = function(z){ p.adjust(z, method = adjust_m)}
+      FUN = function(z) p.adjust(z, method = adjust_m)
     )
   }
 
-  # Validate
   rownames(out) <- NULL
   validate_dge(out)
-
   # Return
   out
 }
@@ -1304,7 +1375,6 @@ prepare_trade_input <- function(stats, guide) {
   
   stats
 }
-
 
 .robust_corr_weights <- function(
     x,
@@ -1396,8 +1466,6 @@ prepare_trade_input <- function(stats, guide) {
   
   return(x)
 }
-
-
 
 .agg_stouffer <- function(
     x,
@@ -2153,6 +2221,7 @@ cmplx_anno <- function(
   base_size = 5,
   lgd_key_prop = 1,
   base_family = "sans",
+  annotation_legend_param = list(),
   which = c("column", "row")
 ) {
 
@@ -2161,56 +2230,99 @@ cmplx_anno <- function(
   dots <- list(...)
   name_side <- dots$annotation_name_side
 
-  # Only validate if provided
   if (!is.null(name_side)) {
-    
     if (which == "column" && !name_side %in% c("left", "right")) {
       stop("For column annotations, annotation_name_side must be 'left' or 'right'")
     }
-
     if (which == "row" && !name_side %in% c("top", "bottom")) {
       stop("For row annotations, annotation_name_side must be 'top' or 'bottom'")
     }
   }
 
-  # Unit conversion helpers 
-  mm_to_pt <- function(mm) mm / 0.352778
   pt_to_mm <- function(pt) pt * 0.352778
 
-  # Annotation scaling
   gp_base <- cmplx_gp(base_size, base_family)
   anno_height <- grid::unit(pt_to_mm(base_size), "mm")
+  lgd_unit <- grid::unit(pt_to_mm(base_size * lgd_key_prop), "mm")
 
-  # Legend scaling
-  lgd_key_size <- base_size * lgd_key_prop
-  lgd_unit <- grid::unit(pt_to_mm(lgd_key_size), "mm")
+  default_legend_param <- list(
+    title_position = "topleft",
+    title_gp = gp_base,
+    labels_gp = gp_base,
+    gap = grid::unit(0.5, "mm"),
+    grid_width = lgd_unit,
+    grid_height = lgd_unit,
+    legend_height = lgd_unit
+  )
+
+  simple_anno_names <- names(dots)[
+    !vapply(dots, inherits, logical(1), what = "AnnotationFunction") &
+      !names(dots) %in% c(
+        "col", "na_col", "gp", "border",
+        "annotation_name_side", "annotation_name_offset",
+        "annotation_name_rot", "annotation_name_gp",
+        "annotation_height", "annotation_width",
+        "simple_anno_size", "show_annotation_name",
+        "show_legend", "which", "gap"
+      )
+  ]
+
+  n_anno <- length(simple_anno_names)
+
+  if (length(annotation_legend_param) > 0) {
+    annotation_legend_param <- lapply(
+      annotation_legend_param,
+      \(x) utils::modifyList(default_legend_param, x)
+    )
+  }
 
   anno <- ComplexHeatmap::HeatmapAnnotation(
     ...,
-
     which = which,
     gap = grid::unit(0.7, "mm"),
     simple_anno_size = anno_height,
     annotation_name_gp = gp_base,
-
-    # Legend styling
-    annotation_legend_param = list(
-      title_position = "topleft",
-      title_gp = gp_base,
-      labels_gp = gp_base,
-      gap = grid::unit(0.5, "mm"),
-      grid_width = lgd_unit,
-      grid_height = lgd_unit,
-      legend_height = lgd_unit
-    )
+    annotation_legend_param = if (length(annotation_legend_param) == 0) {
+      rep(list(default_legend_param), n_anno)
+    } else {
+      annotation_legend_param
+    }
   )
 
-  # Return
   anno
+}
+
+cmplx_legend <- function(
+  title,
+  labels,
+  base_size = 5,
+  lgd_key_prop = 1,
+  base_family = "sans",
+  ...
+) {
+
+  mm_to_pt <- function(mm) mm / 0.352778
+  pt_to_mm <- function(pt) pt * 0.352778
+
+  gp_base <- cmplx_gp(base_size, base_family)
+
+  lgd_key_size <- base_size * lgd_key_prop
+  lgd_unit <- grid::unit(pt_to_mm(lgd_key_size), "mm")
+
+  ComplexHeatmap::Legend(
+    title = title,
+    labels = labels,
+    title_gp = gp_base,
+    labels_gp = gp_base,
+    grid_width = lgd_unit,
+    legend_height = lgd_unit,
+    ...
+  )
 }
 
 cmplx_ht <- function(
   mat,
+  heatmap_legend_param = list(),
   ...,
   base_size = 5,
   lgd_key_prop = 1,
@@ -2258,11 +2370,14 @@ cmplx_ht <- function(
     row_title_gp = gp_base,
 
     # Heatmap legend
-    heatmap_legend_param = list(
-      title_gp = gp_base,
-      labels_gp = gp_base,
-      grid_width = lgd_unit,
-      legend_height = lgd_unit
+    heatmap_legend_param = utils::modifyList(
+      list(
+        title_gp = gp_base,
+        labels_gp = gp_base,
+        grid_width = lgd_unit,
+        legend_height = lgd_unit
+      ),
+      val = heatmap_legend_param
     ),
 
     # Dendrogram styling
@@ -2282,12 +2397,13 @@ cmplx_save <- function(
   units = "in",
   device = NULL,
   res = 300,
+  anno_lgd_list = NULL,
   ...
 ) {
 
   to_inches <- function(x, units) {
     switch(
-      units,
+      EXPR = units,
       "in" = x,
       "cm" = x / 2.54,
       "mm" = x / 25.4,
@@ -2302,7 +2418,7 @@ cmplx_save <- function(
   if (is.null(device)) {
     ext <- tools::file_ext(file)
     device <- switch(
-      tolower(ext),
+      EXPR = tolower(ext),
       pdf = grDevices::pdf,
       svg = grDevices::svg,
       png = grDevices::png,
@@ -2313,7 +2429,6 @@ cmplx_save <- function(
     )
   }
 
-  # raster vs vector handling
   if (identical(device, grDevices::png) ||
       identical(device, grDevices::jpeg) ||
       identical(device, grDevices::tiff)) {
@@ -2323,8 +2438,7 @@ cmplx_save <- function(
       width = width_in,
       height = height_in,
       units = "in",
-      res  = res,
-      ...
+      res = res
     )
 
   } else {
@@ -2332,25 +2446,73 @@ cmplx_save <- function(
     device(
       file,
       width = width_in,
-      height = height_in,
-      ...
+      height = height_in
     )
   }
 
-  ComplexHeatmap::ht_opt(
-    legend_gap = grid::unit(1, "mm")
-  )
+  ComplexHeatmap::ht_opt(legend_gap = grid::unit(2.5, "mm"))
 
-  grid::grid.newpage()
+  # grid::grid.newpage()
   ComplexHeatmap::draw(
     plot,
     heatmap_legend_side = "right",
     annotation_legend_side = "right",
+    annotation_legend_list = anno_lgd_list,
     legend_grouping = "original",
     align_heatmap_legend = "heatmap_top",
     align_annotation_legend = "heatmap_top",
-    merge_legend = TRUE
+    merge_legend = FALSE,
+    ...
   )
 
   invisible(grDevices::dev.off())
 }
+
+
+## Aestethics =================================================================
+colors_formula <- c(
+  "~genotype"                          = "#ECCBAE",
+  "~genotype + sample"                 = "#046C9A",
+  "~genotype + (1|sample)"             = "#D69C4E",
+  "~genotype + sample + (1|guide)"     = "#ABDDDE",
+  "~genotype + (1|sample) + (1|guide)" = "#000000"
+)
+
+colors_method <- c(
+  "limma"    = "#66C2A5",
+  "edger"    = "#FC8D62",
+  "deseq2"   = "#8DA0CB",
+  "dream"    = "#E78AC3",
+  "nebula"   = "#A6D854",
+  "wilcox"   = "#FFD92F",
+  "sceptre"  = "#E5C494",
+  "scmageck" = "#B3B3B3"
+)
+
+colors_gene_status <- c(
+  "Knockout"   = "#FDD262",
+  "Downstream" = "#C7B19C",
+  "On-target"  = "#C7B19C",
+  "Off-target" = "#446455",
+  "Background" = "#D3DDDC"
+)
+
+colors_celltype <- c(
+  "Ery"         = "#762A83",
+  "Imm. B-cell" = "#9970AB",
+  "Gran. P"     = "#D01C8B",
+  "GMP"         = "#E76289",
+  "Gran."       = "#B2182B",
+  "MEP"         = "#8C8D27",
+  "HSC"         = "#4D9221",
+  "MkP"         = "#1B7837"
+)
+
+shapes_knockout <- c(
+  "Brd9" = 16,
+  "Cebpa" = 17,
+  "Chd4" = 15,
+  "Kmt2d" = 18,
+  "Rcor1" = 3,
+  "Klf1" = 4
+)
