@@ -66,8 +66,8 @@ if (!interactive()) {
 
   # Paths
   project_root <- "/home/scc_e_928652/ArcSimulationSynthetic"
-  input_path   <- "results/manual/ArcSimSyn_offtarget_none/01-prepare/01-celltype_Gran. P_knockout_NULL.h5ad"
-  output_path  <- file.path("results/manual/ArcSimSyn_offtarget_none", script_name)
+  input_path   <- "results/manual/ArcSimSyn_offtarget_unique/01-prepare/01-celltype_Gran. P_knockout_NULL.h5ad"
+  output_path  <- file.path("results/manual/ArcSimSyn_offtarget_unique", script_name)
 
   stopifnot(dirname(dirname(input_path)) == dirname(output_path))
   if (!dir.exists(output_path)) dir.create(path = output_path, recursive = TRUE)
@@ -178,6 +178,9 @@ sce_obj$Group <- NULL
 sce_obj$sample <- factor(gsub("Batch", "mouse", sce_obj$Batch), levels = c("mouse1", "mouse2", "mouse3"))
 sce_obj$Batch  <- NULL
 
+# Celltype
+sce_obj$celltype <- unique(sce_rd$celltype)
+
 # Remove hidden layers
 S4Vectors::metadata(sce_obj)$Params             <- NULL
 SummarizedExperiment::assay(sce_obj, "Dropout") <- NULL
@@ -212,6 +215,7 @@ sce_rd_new <- S4Vectors::DataFrame(row.names = rownames(sce_obj))
 
 sce_rd_new$sim_mode   <- "synthetic"
 sce_rd_new$guide_mode <- "no guides"
+sce_rd_new$celltype   <- unique(sce_rd$celltype)
 sce_rd_new$gene       <- sce_rd_old$Gene
 sce_rd_new$facLoc     <- facLoc
 sce_rd_new$sim_logFC  <- log2(sce_rd_old$DEFacGroup2 / sce_rd_old$DEFacGroup1)

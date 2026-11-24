@@ -4,31 +4,50 @@
 ## Author: DKatzlberger
 ## Date: 21.01.2026
 
-## This script learns marginal distributions and gene correlations from 
-## single-cell RNA-seq data via 'scDesign3' (ZINB linear regression models).
+## This script learns marginal distributions and gene correlations from
+## single-cell RNA-seq data via 'scDesign3' (ZINB linear regression models)
+## and simulates a Perturb-seq dataset with an mixed off-target effect.
 
-## Simulates a Perturb-seq dataset with targeting and non-targeting (NTC)
-## cells. Knockouts have 3 unique guide RNAs (2 on-target, 1 off-target).
-## The off-target guide shares on-target genes but impacts extra genes.
+## Simulated cells: 
+## - Targeting cells with 3 guide RNAs (2 on-target, 1 off-target)
+## - Non-targeting control cells with 3 guide RNAs (NTC). 
+## Note: cells are assigned randomly to the guides within each sample 'I'.
 
-## Genes are split into: downstream, off-target, and background sets.
-## Mean parameters for all sets are conditioned on sample info 'I'.
+## Genes are split into three sets:
+## - On-target: affected by the target knockout.
+## - Off-target: affect by an additional knockout.
+## - Background: not affected by the knockout.
+## Note: A fraction ('fracOff') of downstream genes (from simulated data) are
+## evenly spread across their expression ranking and assigned either 
+## on-target or off-target genes.
 
-## Downstream genes depend on knockout expression 'C'. Off-target genes
-## depend on 'C' only for off-target guides. For on-target guides, they
-## act as background. Background genes depend only on sample info 'I'.
-## The marginal distributions of genes are grouped for on-target guides
-## and off target guides. 
+## Mixed off-target effect: 
+## On-target guides affect only the on-target genes (True Positives).
+## Off-target guide affects the on-target AND the off-target genes.
 
-## Next the gene-gene correlations are learned using gaussian copulas. This 
-## learns network-level dependencies for within samples 'I' and knockout 
-## indication 'K' across genes.
+## Marginal distributions are fitted on all cells. Only the mean parameter
+## was modelled with additionally log(library) as an offset.
+## - On-target guides: if effected 'K + I' else background 'I'.
+## - Off-target guide: if effected 'K + I' else background 'I'.
+## - NTC guides: always background 'I'.
+## Note: The 'I' models are fitted on K = 0 and K = 1 cells together, so the NTC
+## baseline is a mixture of both and simulated effects are slightly smaller
+## than the true K = 1 vs K = 0 difference.
 
-## The mean of targeting cells are modified by modifying 'C' by sampling form
-## expression values from NTC cells (currently outdated).
+## Gene-gene correlations are learned with gaussian copulas per group of
+## knockout indication and sample ('K_I'). The correlation blocks of the
+## on-target genes and the remaining genes are combined into one matrix per
+## marginal set. On-target guides and NTC cells use the on-target copula, the
+## off-target guide uses the off-target copula.
 
-## Then expression counts for each are sampled using the fitted paramters and 
-## the gene-gene correlation matrix to generate a Perturb-Seq dataset.
+## The knockout gene expression 'C' of targeting cells is modified by
+## sampling NTC expression values ('koEff'; currently outdated: it only
+## changes the knockout gene counts, as the mean models use 'K', not 'C').
+
+## Expression counts are sampled from the fitted parameters and copulas.
+## Output: simulated dataset (.h5ad) with the gene ground truth in rowData and
+## diagnostic panels A (heatmap), B (per-gene distributions) and C (summary
+## statistics).
 
 ## Reproducibility ============================================================
 seed <- 42
@@ -182,10 +201,16 @@ genes_downstream  <- genes_downstream[order(downstream_reads, decreasing = TRUE)
 genes_downstream  <- genes_downstream[seq_len(min(nDown, length(genes_downstream)))]
 
 # On- & off-target
-nOff <- round(length(genes_downstream) * (fracOff / 100))
-genes_off_target <- if (nOff > 0) genes_downstream[seq_len(nOff)] else character(0)
-genes_downstream <- if (nOff < length(genes_downstream)) genes_downstream[seq.int(nOff + 1, length(genes_downstream))] else character(0)
-stopifnot(!any(genes_downstream %in% genes_off_target))
+n    <- length(genes_downstream)
+nOff <- round(n * (fracOff / 100))
+
+# One gene from the middle of each of nOff equally sized rank blocks
+off_idx <- if (nOff > 0) floor((seq_len(nOff) - 0.5) * n / nOff) + 1 else integer(0)
+
+genes_off_target <- genes_downstream[off_idx]
+genes_downstream <- genes_downstream[setdiff(seq_len(n), off_idx)]
+
+stopifnot(length(off_idx) == length(unique(off_idx)), !any(genes_downstream %in% genes_off_target))
 
 # Background
 genes_background <- sce_rd$gene[sce_rd$status == "Background"]
@@ -196,7 +221,7 @@ genes_background <- genes_background[seq_len(min(nBack, length(genes_background)
 ### Marginals -----------------------------------------------------------------
 .estimate_marginals <- fun_with_ram(estimate_marginals)
 
-txt <- sprintf("on-target downstream: conditioned by %s expression 'C' and sample info 'I'", knockout)
+txt <- sprintf("on-target downstream: conditioned by 'K' and sample info 'I'.")
 marg_on_downstream <- .estimate_marginals(
   sce_obj = sce_obj[genes_downstream, ],
   assay_use = "counts",
@@ -211,13 +236,28 @@ marg_on_downstream <- .estimate_marginals(
   info = txt
 )
 
-txt <- sprintf("off-target downstream: conditioned by %s expression 'C' and sample info 'I'", knockout)
+txt <- sprintf("off-target downstream: conditioned by 'K' and sample info 'I'.")
 marg_off_downstream <- .estimate_marginals(
   sce_obj = sce_obj[genes_off_target, ],
   assay_use = "counts",
   celltype = "celltype",
   covariates = c("C", "K", "I", "K_I", "library"),
   mu_formula = "K + I + offset(log(library))",
+  sigma_formula = "1",
+  family_use = "zinb",
+  corr_by = "K_I",
+  n_cores = 1,
+  verbose = FALSE,
+  info = txt
+)
+
+txt <- sprintf("on-target background: conditioned by sample info 'I'")
+marg_on_background <- .estimate_marginals(
+  sce_obj = sce_obj[genes_downstream, ],
+  assay_use = "counts",
+  celltype = "celltype",
+  covariates = c("C", "K", "I", "K_I", "library"),
+  mu_formula = "I + offset(log(library))",
   sigma_formula = "1",
   family_use = "zinb",
   corr_by = "K_I",
@@ -259,12 +299,15 @@ marg_background <- .estimate_marginals(
 # Validate marginals
 marg_on_downstream  <- marg_on_downstream[sapply(marg_on_downstream, function(x) is_valid_fit(x$fit))]
 marg_off_downstream <- marg_off_downstream[sapply(marg_off_downstream, function(x) is_valid_fit(x$fit))]
+marg_on_background  <- marg_on_background[sapply(marg_on_background, function(x) is_valid_fit(x$fit))]
 marg_off_background <- marg_off_background[sapply(marg_off_background, function(x) is_valid_fit(x$fit))]
 marg_background     <- marg_background[sapply(marg_background, function(x) is_valid_fit(x$fit))]
 
 # Build complete marginal sets 
 marg_on  <- c(marg_on_downstream, marg_off_background, marg_background)
 marg_off <- c(marg_on_downstream, marg_off_downstream, marg_background)
+marg_ntc <- c(marg_on_background, marg_off_background, marg_background)
+# stopifnot(setequal(names(marg_ntc), names(marg_on)), setequal(names(marg_off), names(marg_on)))
 
 ### Correlation ---------------------------------------------------------------
 .estimate_correlation <- fun_with_ram(estimate_correlation)
@@ -415,12 +458,12 @@ params_off <- .extract_params(
   corr_by = "K_I"
 )
 
-params_ntc <- .extract_params(
-  sce_obj = sce_obj[names(marg_on), ],
+params_ntc <- extract_params(
+  sce_obj = sce_obj[names(marg_ntc), ],
   celltype = "celltype",
   covariates = c("C", "K", "I", "K_I", "library"),
   new_covariate = new_cov_ntc[new_cov_ntc$K == "0", , drop = FALSE],
-  marginals = marg_on,
+  marginals = marg_ntc,
   family_use = "zinb",
   corr_by = "K_I"
 )
@@ -531,7 +574,7 @@ new_cov_ntc$G <- NULL
 
 txt <- "simulating cells for NTC guide 1"
 sim_ntc_1 <- .sim_pipe(
-  sce_obj = sce_obj[names(marg_on), cells_ntc_1],
+  sce_obj = sce_obj[names(marg_ntc), cells_ntc_1],
   celltype = "celltype",
   covariates = c("C", "K", "I", "K_I", "library"),
   params = lapply(params_ntc, function(x) x[cells_ntc_1, , drop = FALSE]),
@@ -552,7 +595,7 @@ sim_ntc_1$on_target <- TRUE
 
 txt <- "simulating cells for NTC guide 2"
 sim_ntc_2 <- .sim_pipe(
-  sce_obj = sce_obj[names(marg_on), cells_ntc_2],
+  sce_obj = sce_obj[names(marg_ntc), cells_ntc_2],
   celltype = "celltype",
   covariates = c("C", "K", "I", "K_I", "library"),
   params = lapply(params_ntc, function(x) x[cells_ntc_2, , drop = FALSE]),
@@ -573,7 +616,7 @@ sim_ntc_2$on_target <- TRUE
 
 txt <- "simulating cells for NTC guide 3"
 sim_ntc_3 <- .sim_pipe(
-  sce_obj = sce_obj[names(marg_on), cells_ntc_3],
+  sce_obj = sce_obj[names(marg_ntc), cells_ntc_3],
   celltype = "celltype",
   covariates = c("C", "K", "I", "K_I", "library"),
   params = lapply(params_ntc, function(x) x[cells_ntc_3, , drop = FALSE]),
@@ -594,6 +637,9 @@ sim_ntc_3$on_target <- TRUE
 
 ### Ground truth --------------------------------------------------------------
 sce_obj <- BiocGenerics::cbind(sim_tar_1, sim_tar_2, sim_tar_3, sim_ntc_1, sim_ntc_2, sim_ntc_3)
+
+# Celltype
+sce_obj$celltype <- unique(sce_rd$celltype)
 
 sce_rd_new            <- sce_rd[rownames(sce_obj), , drop = FALSE]
 sce_rd_new$guide_mode <- "mixed off-target effect"

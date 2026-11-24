@@ -53,7 +53,7 @@ if (!interactive()) {
   # Paths
   project_root <- "/home/scc_e_928652/ArcSimulationSynthetic"
   input_path   <- "data_generated/GSE213511/rna_integrated.rds"
-  output_path  <- file.path("results/manual/ArcSimSyn_offtarget_none", script_name)
+  output_path  <- file.path("results/manual/ArcSimSyn_offtarget_unique", script_name)
 
   if (!dir.exists(output_path)) dir.create(path = output_path, recursive = TRUE)
 
@@ -68,6 +68,7 @@ if (!interactive()) {
   output_name <- paste0(script_id, "-")
   output_name <- paste0(output_name, "celltype_", celltype, "_knockout_", knockout_name)
 }
+
 
 ## r-utils ====================================================================
 source(file.path(project_root, "R", "utils.R"))

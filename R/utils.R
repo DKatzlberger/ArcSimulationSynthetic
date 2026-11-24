@@ -363,7 +363,7 @@ assign_guide_by_max_count <- function(
   counts <- obj@assays[[assay]]$counts
 
   # Warning: fun overwrites existing guide col
-  if ("guide" %in% colnames(obj[[]])) showf("Existing 'guide' assignment will be overwritten.", type = "warning")
+  if ("guide" %in% colnames(obj[[]])) showf("Existing 'guide' assignment will be replaced.", type = "warning")
 
   # Assign guides
   obj$guide <- apply(counts, 2, function(x) {

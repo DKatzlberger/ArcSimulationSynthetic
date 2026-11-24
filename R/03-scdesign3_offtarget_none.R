@@ -155,10 +155,16 @@ genes_downstream <- genes_downstream[order(downstream_reads, decreasing = TRUE)]
 genes_downstream <- genes_downstream[seq_len(min(nDown, length(genes_downstream)))]
 
 # On- & off-target
-nOff <- round(length(genes_downstream) * (fracOff / 100))
-genes_off_target <- if (nOff > 0) genes_downstream[seq_len(nOff)] else character(0)
-genes_downstream <- if (nOff < length(genes_downstream)) genes_downstream[seq.int(nOff + 1, length(genes_downstream))] else character(0)
-stopifnot(!any(genes_downstream %in% genes_off_target))
+n    <- length(genes_downstream)
+nOff <- round(n * (fracOff / 100))
+
+# One gene from the middle of each of nOff equally sized rank blocks
+off_idx <- if (nOff > 0) floor((seq_len(nOff) - 0.5) * n / nOff) + 1 else integer(0)
+
+genes_off_target <- genes_downstream[off_idx]
+genes_downstream <- genes_downstream[setdiff(seq_len(n), off_idx)]
+
+stopifnot(length(off_idx) == length(unique(off_idx)), !any(genes_downstream %in% genes_off_target))
 
 # Background
 genes_background <- sce_rd$gene[sce_rd$status == "Background"]
@@ -467,6 +473,9 @@ sim_ntc_3$on_target <- TRUE
 
 ### Ground truth --------------------------------------------------------------
 sce_obj <- BiocGenerics::cbind(sim_tar_1, sim_tar_2, sim_tar_3, sim_ntc_1, sim_ntc_2, sim_ntc_3)
+
+# Celltype
+sce_obj$celltype <- unique(sce_rd$celltype)
 
 sce_rd_new            <- sce_rd[rownames(sce_obj), , drop = FALSE]
 sce_rd_new$guide_mode <- "no off-target effect"

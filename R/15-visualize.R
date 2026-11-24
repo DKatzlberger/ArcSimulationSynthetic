@@ -38,10 +38,10 @@ if (!interactive()) {
 
   # Paths
   project_root <- "/home/scc_e_928652/ArcSimulationSynthetic"
-  input_path   <- list.files(path = "results/nextflow/ArcSimSyn_offtarget_mixed/test01_2026-11-16", pattern = "_dge\\.rds$", recursive = TRUE, full.names = TRUE)
-  output_path  <- "results/manual/ArcSimSyn_offtarget_mixed/15-visualize"
+  input_path   <- list.files(path = "results/nextflow/ArcSimSyn_offtarget_mixed/LabMeeting_2026-11-18", pattern = "_dge\\.rds$", recursive = TRUE, full.names = TRUE)
+  output_path  <- "results/nextflow/ArcSimSyn_offtarget_mixed/LabMeeting_2026-11-18/15-visualize"
 
-  # stopifnot(dirname(dirname(input_path)) == dirname(output_path))
+  stopifnot(dirname(dirname(input_path)) == dirname(output_path))
   if (!dir.exists(output_path)) dir.create(path = output_path, recursive = TRUE)
 
   # Params
@@ -355,9 +355,12 @@ ggplot2::facet_grid(
   scales = "free_x",
   space = "free"
 ) +
-ggplot2::scale_fill_brewer(
+ggplot2::scale_fill_manual(
   name = "Workflow",
-  palette = "Set2"
+  values = c(
+    "singlecell" = "#66C2A5",
+    "pseudobulk" = "#FC8D62"
+  )
 ) +
 ggplot2::labs(
   x = "Method",
@@ -1144,9 +1147,12 @@ ggplot2::facet_grid(
   scales = "free_x",
   space = "free"
 ) +
-ggplot2::scale_fill_brewer(
+ggplot2::scale_fill_manual(
   name = "Workflow",
-  palette = "Set2"
+  values = c(
+    "singlecell" = "#66C2A5",
+    "pseudobulk" = "#FC8D62"
+  )
 ) +
 ggplot2::labs(
   x = "Method",

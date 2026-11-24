@@ -18,21 +18,21 @@ include { visualize }                 from "../modules/15-visualize.nf"
 
 // Parameters
 params {
-    data: Path = "data/GSE213511/rna_integrated.rds"
+    data: Path = "data_generated/GSE213511/rna_integrated.rds"
 
     // Prepare
     prepare_celltype = ["Gran. P"]
     prepare_knockout = ["NULL"]
     
     // splatter
-    splatter_facLoc   = [ 2 ] // 0.5, 1, 2
+    splatter_facLoc = [ 0.5, 1, 1.5, 2 ] // 0.5, 1, 1.5, 2 
     
     // scdesign3
-    scdesign3_fracOff = [ 10 ]  // 10, 20, 30, 40, 50
-    scdesign3_koEff   = [ 100 ] // 25, 50, 75, 100
+    scdesign3_fracOff = [ 10, 20, 30, 40, 50 ]  // 10, 20, 30, 40, 50
+    scdesign3_koEff   = [ 100 ]
 
     // subset
-    subset_nGuide = [ 10 ] // 10, 20, 50, 100, 150, 200, 250, 300
+    subset_nGuide = [ 10, 20, 50, 100, 150, 200, 250 ] // 10, 20, 50, 100, 150, 200, 250
 
     // pseudobulk
     pseudobulk_grps = [ "sample,guide" ]
@@ -95,15 +95,15 @@ workflow {
     )
 
     // R: 03-scdesign3 --------------------------------------------------------
-    scdesign3_offtarget_mixed_args = splatter.out
+    scdesign3_offtarget_unique_args = splatter.out
         .map { h5ad, _A, _B, _C -> h5ad }
         .combine(params.scdesign3_fracOff)
         .combine(params.scdesign3_koEff)
 
     scdesign3_offtarget_unique(
-        scdesign3_offtarget_mixed_args.map { arg -> arg[0] }, // data 
-        scdesign3_offtarget_mixed_args.map { arg -> arg[1] }, // nOn
-        scdesign3_offtarget_mixed_args.map { arg -> arg[2] }  // koEff
+        scdesign3_offtarget_unique_args.map { arg -> arg[0] }, // data 
+        scdesign3_offtarget_unique_args.map { arg -> arg[1] }, // nOn
+        scdesign3_offtarget_unique_args.map { arg -> arg[2] }  // koEff
     )
 
     // R: 04-compare ----------------------------------------------------------
@@ -294,7 +294,7 @@ output {
         path "02-splatter"
         mode "copy"
     }
-    res_scdesign3_offtarget_mixed {
+    res_scdesign3_offtarget_unique {
         path "03-scdesign3_offtarget_unique"
         mode "copy"
     }

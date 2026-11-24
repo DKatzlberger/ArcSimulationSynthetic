@@ -42,17 +42,17 @@ if (!interactive()) {
   script_id   <- sub(pattern = "-.*", replacement = "", script_name)
 
   project_root <- "/home/scc_e_928652/ArcSimulationSynthetic"
-  input_path   <- "results/manual/ArcSimSyn_offtarget_unique/splatter/celltype_Gran. P_facLoc_2.h5ad"
+  input_path   <- "results/manual/ArcSimSyn_offtarget_unique/02-splatter/02-01-celltype_Gran. P_knockout_NULL_facLoc_2.h5ad"
   output_path  <- file.path("results/manual/ArcSimSyn_offtarget_unique", script_name)
   
   stopifnot(dirname(dirname(input_path)) == dirname(output_path))
   if (!dir.exists(output_path)) dir.create(path = output_path, recursive = TRUE)
 
   # Params
-  fracOff <- 10
+  fracOff <- 50
   koEff   <- 100
-  nDown   <- 300
-  nBack   <- 300
+  nDown   <- 30
+  nBack   <- 30
 
   # Output
   input_name  <- tools::file_path_sans_ext(basename(input_path))
@@ -116,7 +116,8 @@ counts   <- SingleCellExperiment::counts(sce_obj)
 if (anyNA(counts)) showf("Counts contain NA values.", type = "stop")
 if (any(!is.finite(counts))) showf("Counts contain non-finite values.", type = "stop")
 
-lib_size <- Matrix::colSums(counts)
+# Library size (pipeline)
+lib_size <- sce_obj$lib_size_orig
 max_lib  <- quantile(lib_size, 0.999)
 stopifnot(all(is.finite(lib_size)), all(lib_size > 0))
 
@@ -150,10 +151,16 @@ genes_downstream <- genes_downstream[order(downstream_reads, decreasing = TRUE)]
 genes_downstream <- genes_downstream[seq_len(min(nDown, length(genes_downstream)))]
 
 # On- & off-target
-nOff <- round(length(genes_downstream) * (fracOff / 100))
-genes_off_target <- if (nOff > 0) genes_downstream[seq_len(nOff)] else character(0)
-genes_downstream <- if (nOff < length(genes_downstream)) genes_downstream[seq.int(nOff + 1, length(genes_downstream))] else character(0)
-stopifnot(!any(genes_downstream %in% genes_off_target))
+n    <- length(genes_downstream)
+nOff <- round(n * (fracOff / 100))
+
+# One gene from the middle of each of nOff equally sized rank blocks
+off_idx <- if (nOff > 0) floor((seq_len(nOff) - 0.5) * n / nOff) + 1 else integer(0)
+
+genes_off_target <- genes_downstream[off_idx]
+genes_downstream <- genes_downstream[setdiff(seq_len(n), off_idx)]
+
+stopifnot(length(off_idx) == length(unique(off_idx)), !any(genes_downstream %in% genes_off_target))
 
 # Background
 genes_background <- sce_rd$gene[sce_rd$status == "Background"]
@@ -169,10 +176,10 @@ marg_on_downstream <- .estimate_marginals(
   sce_obj = sce_obj[genes_downstream, ],
   assay_use = "counts",
   celltype = "celltype",
-  covariates = c("C", "K", "I", "K_I"),
-  mu_formula = "C + I",
+  covariates = c("C", "K", "I", "K_I", "library"),
+  mu_formula = "K + I + offset(log(library))",
   sigma_formula = "1",
-  family_use = family_use,
+  family_use = "zinb",
   corr_by = "K_I",
   n_cores = 1,
   verbose = FALSE,
@@ -184,10 +191,10 @@ marg_off_downstream <- .estimate_marginals(
   sce_obj = sce_obj[genes_off_target, ],
   assay_use = "counts",
   celltype = "celltype",
-  covariates = c("C", "K", "I", "K_I"),
-  mu_formula = "C + I",
+  covariates = c("C", "K", "I", "K_I", "library"),
+  mu_formula = "K + I + offset(log(library))",
   sigma_formula = "1",
-  family_use = family_use,
+  family_use = "zinb",
   corr_by = "K_I",
   n_cores = 1,
   verbose = FALSE,
@@ -199,10 +206,10 @@ marg_on_background <- .estimate_marginals(
   sce_obj = sce_obj[genes_downstream, ],
   assay_use = "counts",
   celltype = "celltype",
-  covariates = c("C", "K", "I", "K_I"),
-  mu_formula = "I",
+  covariates = c("C", "K", "I", "K_I", "library"),
+  mu_formula = "I + offset(log(library))",
   sigma_formula = "1",
-  family_use = family_use,
+  family_use = "zinb",
   corr_by = "K_I",
   n_cores = 1,
   verbose = FALSE,
@@ -214,10 +221,10 @@ marg_off_background <- .estimate_marginals(
   sce_obj = sce_obj[genes_off_target, ],
   assay_use = "counts",
   celltype = "celltype",
-  covariates = c("C", "K", "I", "K_I"),
-  mu_formula = "I",
+  covariates = c("C", "K", "I", "K_I", "library"),
+  mu_formula = "I + offset(log(library))",
   sigma_formula = "1",
-  family_use = family_use,
+  family_use = "zinb",
   corr_by = "K_I",
   n_cores = 1,
   verbose = FALSE,
@@ -229,10 +236,10 @@ marg_background <- .estimate_marginals(
   sce_obj = sce_obj[genes_background, ],
   assay_use = "counts",
   celltype = "celltype",
-  covariates = c("C", "K", "I", "K_I"),
-  mu_formula = "I",
+  covariates = c("C", "K", "I", "K_I", "library"),
+  mu_formula = "I + offset(log(library))",
   sigma_formula = "1",
-  family_use = family_use,
+  family_use = "zinb",
   corr_by = "K_I",
   n_cores = 1,
   verbose = FALSE,
@@ -248,11 +255,14 @@ marg_background     <- marg_background[sapply(marg_background, function(x) is_va
 
 marg_on  <- c(marg_on_downstream, marg_off_background, marg_background)
 marg_off <- c(marg_on_background, marg_off_downstream, marg_background)
+marg_ntc <- c(marg_on_background, marg_off_background, marg_background)
+# stopifnot(setequal(names(marg_ntc), names(marg_on)), setequal(names(marg_off), names(marg_on)))
 
 ### Correlation ---------------------------------------------------------------
 .estimate_correlation <- fun_with_ram(estimate_correlation)
 
 # On-target copula
+txt <- "On-target correlation of downstream genes."
 copula_on_downstream <- .estimate_correlation(
   sce_obj = sce_obj[names(marg_on), ],
   marginals = marg_on,
@@ -262,9 +272,11 @@ copula_on_downstream <- .estimate_correlation(
   copula = "gaussian",
   corr_features = rownames(sce_obj[names(marg_on), ]) %in% genes_downstream,
   n_cores = 1,
-  verbose = FALSE
+  verbose = FALSE,
+  info = txt
 )
 
+txt <- "On-target correaltion of background genes."
 copula_on_background <- .estimate_correlation(
   sce_obj = sce_obj[names(marg_on), ],
   marginals = marg_on,
@@ -274,7 +286,8 @@ copula_on_background <- .estimate_correlation(
   copula = "gaussian",
   corr_features = rownames(sce_obj[names(marg_on), ]) %in% c(genes_off_target, genes_background),
   n_cores = 1,
-  verbose = FALSE
+  verbose = FALSE,
+  info = txt
 )
 
 stopifnot(identical(names(copula_on_downstream$copula_list), names(copula_on_background$copula_list)))
@@ -298,6 +311,7 @@ copula_on$copula_list <- Map(
 copula_on$important_feature <- copula_on_downstream$important_feature | copula_on_background$important_feature
 
 # Off-target copula
+txt <- "Off-target correaltion of downstream genes."
 copula_off_downstream <- .estimate_correlation(
   sce_obj = sce_obj[names(marg_off), ],
   marginals = marg_off,
@@ -305,11 +319,13 @@ copula_off_downstream <- .estimate_correlation(
   corr_by = "K_I",
   family_use = "zinb",
   copula = "gaussian",
-  corr_features = rownames(sce_obj[names(marg_on), ]) %in% c(genes_downstream, genes_off_target),
+  corr_features = rownames(sce_obj[names(marg_off), ]) %in% genes_off_target,
   n_cores = 1,
-  verbose = FALSE
+  verbose = FALSE,
+  info = txt
 )
 
+txt <- "Off-target correaltion of background genes."
 copula_off_background <- .estimate_correlation(
   sce_obj = sce_obj[names(marg_off), ],
   marginals = marg_off,
@@ -317,9 +333,10 @@ copula_off_background <- .estimate_correlation(
   corr_by = "K_I",
   family_use = "zinb",
   copula = "gaussian",
-  corr_features = rownames(sce_obj[names(marg_on), ]) %in% genes_background,
+  corr_features = rownames(sce_obj[names(marg_off), ]) %in% c(genes_downstream, genes_background),
   n_cores = 1,
-  verbose = FALSE
+  verbose = FALSE,
+  info = txt
 )
 
 stopifnot(identical(names(copula_off_downstream$copula_list), names(copula_off_background$copula_list)))
@@ -348,7 +365,7 @@ copula_off$important_feature <- copula_off_downstream$important_feature | copula
 txt <- "modifying cells for on-target effect"
 new_cov_on <- .modify_covariate(
   sce_obj = sce_obj[names(marg_on), ],
-  covariates = c("C", "K", "I", "K_I"),
+  covariates = c("C", "K", "I", "K_I", "library"),
   corr_by = "K_I",       
   ko_eff = koEff,
   mode = "partial",
@@ -358,7 +375,7 @@ new_cov_on <- .modify_covariate(
 txt <- "modifying cells for off-target effect"
 new_cov_off <- .modify_covariate(
   sce_obj = sce_obj[names(marg_off), ],
-  covariates = c("C", "K", "I", "K_I"),
+  covariates = c("C", "K", "I", "K_I", "library"),
   corr_by = "K_I",      
   ko_eff = koEff,
   mode = "partial",
@@ -368,7 +385,7 @@ new_cov_off <- .modify_covariate(
 txt <- "modifying cells for non-targeting control"
 new_cov_ntc <- .modify_covariate(
   sce_obj = sce_obj[names(marg_on), ],
-  covariates = c("C", "K", "I", "K_I"),
+  covariates = c("C", "K", "I", "K_I", "library"),
   corr_by = "K_I",      
   ko_eff = NULL,
   mode = "partial",
@@ -378,137 +395,219 @@ new_cov_ntc <- .modify_covariate(
 ### Params --------------------------------------------------------------------
 .extract_params <- fun_with_ram(extract_params)
 
-params_tar_on <- extract_params(
+params_on <- extract_params(
   sce_obj = sce_obj[names(marg_on), ],
   celltype = "celltype",
-  covariates = c("C", "K", "I", "K_I"),
+  covariates = c("C", "K", "I", "K_I", "library"),
   new_covariate = new_cov_on[new_cov_on$K == "1", , drop = FALSE],
   marginals = marg_on,
-  family_use = family_use,
+  family_use = "zinb",
   corr_by = "K_I"
 )
 
-params_tar_off <- extract_params(
+params_off <- extract_params(
   sce_obj = sce_obj[names(marg_off), ],
   celltype = "celltype",
-  covariates = c("C", "K", "I", "K_I"),
+  covariates = c("C", "K", "I", "K_I", "library"),
   new_covariate = new_cov_off[new_cov_off$K == "1", , drop = FALSE],
   marginals = marg_off,
-  family_use = family_use,
+  family_use = "zinb",
   corr_by = "K_I"
 )
 
 params_ntc <- extract_params(
-  sce_obj = sce_obj[names(marg_on), ],
+  sce_obj = sce_obj[names(marg_ntc), ],
   celltype = "celltype",
-  covariates = c("C", "K", "I", "K_I"),
+  covariates = c("C", "K", "I", "K_I", "library"),
   new_covariate = new_cov_ntc[new_cov_ntc$K == "0", , drop = FALSE],
-  marginals = marg_on,
-  family_use = family_use,
+  marginals = marg_ntc,
+  family_use = "zinb",
   corr_by = "K_I"
 )
 
 ### Counts --------------------------------------------------------------------
+#### Targeting guides ---------------------------------------------------------
 .sim_pipe <- fun_with_ram(sim_pipe)
 
-# On-target guide 1
+new_cov_on   <- new_cov_on[new_cov_on$K == "1", , drop = FALSE]
+new_cov_on$G <- NA_integer_
+
+for (s in unique(new_cov_on$I)) {
+  idx <- which(new_cov_on$I == s)
+  new_cov_on$G[idx] <- sample(rep(1:3, length.out = length(idx)))
+}
+
+stopifnot(!anyNA(new_cov_on$G))
+
+# Allocate cells per guide
+cells_tar_1 <- rownames(new_cov_on[new_cov_on$G == 1, , drop = FALSE])
+cells_tar_2 <- rownames(new_cov_on[new_cov_on$G == 2, , drop = FALSE])
+cells_tar_3 <- rownames(new_cov_on[new_cov_on$G == 3, , drop = FALSE])
+
+new_cov_on$G <- NULL
+
+# On-target guides
 txt <- "simulating cells for on-target guide 1"
-sim_tar_on_1 <- .sim_pipe(
-  sce_obj = sce_obj[names(marg_on), ],
+sim_tar_1 <- .sim_pipe(
+  sce_obj = sce_obj[names(marg_on), cells_tar_1],
   celltype = "celltype",
-  covariates = c("C", "K", "I", "K_I"),
-  params = params_tar_on,
-  copulas = copula,
+  covariates = c("C", "K", "I", "K_I", "library"),
+  params = lapply(params_on, function(x) x[cells_tar_1, , drop = FALSE]),
+  copulas = copula_on,
   corr_by = "K_I",
-  family_use = family_use,
-  new_covariate = new_cov_on[new_cov_on$K == "1", , drop = FALSE],
+  family_use = "zinb",
+  new_covariate = new_cov_on[cells_tar_1, , drop = FALSE],
   knockout = knockout,
+  seed = 1000,
   info = txt
 )
 
-sim_tar_on_1$group     <- "targeting"
-sim_tar_on_1$genotype  <- knockout
-sim_tar_on_1$guide     <- paste0(knockout, "-On1")
-sim_tar_on_1$on_guide  <- paste0(knockout, "-On1")
-sim_tar_on_1$on_target <- TRUE
+sim_tar_1$group     <- "KO"
+sim_tar_1$genotype  <- knockout
+sim_tar_1$guide     <- paste0(knockout, "-1")
+sim_tar_1$on_guide  <- paste0(knockout, "-1")
+sim_tar_1$on_target <- TRUE
 
-# On-target guide 2
 txt <- "simulating cells for on-target guide 2"
-sim_tar_on_2 <- .sim_pipe(
-  sce_obj = sce_obj[names(marg_on), ],
+sim_tar_2 <- .sim_pipe(
+  sce_obj = sce_obj[names(marg_on), cells_tar_2],
   celltype = "celltype",
-  covariates = c("C", "K", "I", "K_I"),
-  params = params_tar_on,
-  copulas = copula,
+  covariates = c("C", "K", "I", "K_I", "library"),
+  params = lapply(params_on, function(x) x[cells_tar_2, , drop = FALSE]),
+  copulas = copula_on,
   corr_by = "K_I",
-  family_use = family_use,
-  new_covariate = new_cov_on[new_cov_on$K == "1", , drop = FALSE],
+  family_use = "zinb",
+  new_covariate = new_cov_on[cells_tar_2, , drop = FALSE],
   knockout = knockout,
+  seed = 2000,
   info = txt
 )
 
-sim_tar_on_2$group     <- "targeting"
-sim_tar_on_2$genotype  <- knockout
-sim_tar_on_2$guide     <- paste0(knockout, "-On2")
-sim_tar_on_2$on_guide  <- paste0(knockout, "-On2")
-sim_tar_on_2$on_target <- TRUE
+sim_tar_2$group     <- "KO"
+sim_tar_2$genotype  <- knockout
+sim_tar_2$guide     <- paste0(knockout, "-2")
+sim_tar_2$on_guide  <- paste0(knockout, "-2")
+sim_tar_2$on_target <- TRUE
 
-# Off-target guide
+# Off-target guides
 txt <- "simulating cells for off-target guide 1"
-sim_tar_off <- .sim_pipe(
-  sce_obj = sce_obj[names(marg_off), ],
+sim_tar_3 <- .sim_pipe(
+  sce_obj = sce_obj[names(marg_off), cells_tar_3],
   celltype = "celltype",
-  covariates = c("C", "K", "I", "K_I"),
-  params = params_tar_off,
-  copulas = copula,
+  covariates = c("C", "K", "I", "K_I", "library"),
+  params = lapply(params_off, function(x) x[cells_tar_3, , drop = FALSE]),
+  copulas = copula_off,
   corr_by = "K_I",
-  family_use = family_use,
-  new_covariate = new_cov_off[new_cov_off$K == "1", , drop = FALSE],
+  family_use = "zinb",
+  new_covariate = new_cov_off[cells_tar_3, , drop = FALSE],
   knockout = knockout,
+  seed = 3000,
   info = txt
 )
 
-sim_tar_off$group     <- "targeting"
-sim_tar_off$genotype  <- knockout
-sim_tar_off$guide     <- paste0(knockout, "-Off1")
-sim_tar_off$on_guide  <- paste0(knockout, "-Off1")
-sim_tar_off$on_target <- FALSE
+sim_tar_3$group     <- "KO"
+sim_tar_3$genotype  <- knockout
+sim_tar_3$guide     <- paste0(knockout, "-3")
+sim_tar_3$on_guide  <- paste0(knockout, "-3")
+sim_tar_3$on_target <- FALSE
 
-# Non-targeting guide
+#### Non-targeting guides -----------------------------------------------------
+new_cov_ntc   <- new_cov_ntc[new_cov_ntc$K == "0", , drop = FALSE]
+new_cov_ntc$G <- NA_integer_
+
+for (s in unique(new_cov_ntc$I)) {
+    idx <- which(new_cov_ntc$I == s)
+    new_cov_ntc$G[idx] <- sample(rep(1:3, length.out = length(idx)))
+}
+
+stopifnot(!anyNA(new_cov_ntc$G))
+
+# Allocate cells per guide
+cells_ntc_1 <- rownames(new_cov_ntc[new_cov_ntc$G == 1, , drop = FALSE])
+cells_ntc_2 <- rownames(new_cov_ntc[new_cov_ntc$G == 2, , drop = FALSE])
+cells_ntc_3 <- rownames(new_cov_ntc[new_cov_ntc$G == 3, , drop = FALSE])
+
+new_cov_ntc$G <- NULL
+
 txt <- "simulating cells for NTC guide 1"
-sim_ntc <- .sim_pipe(
-  sce_obj = sce_obj[names(marg_on), ],
+sim_ntc_1 <- .sim_pipe(
+  sce_obj = sce_obj[names(marg_ntc), cells_ntc_1],
   celltype = "celltype",
-  covariates = c("C", "K", "I", "K_I"),
-  params = params_ntc,
-  copulas = copula,
+  covariates = c("C", "K", "I", "K_I", "library"),
+  params = lapply(params_ntc, function(x) x[cells_ntc_1, , drop = FALSE]),
+  copulas = copula_on,
   corr_by = "K_I",
-  family_use = family_use,
-  new_covariate = new_cov_ntc[new_cov_ntc$K == "0", , drop = FALSE],
+  family_use = "zinb",
+  new_covariate = new_cov_ntc[cells_ntc_1, , drop = FALSE],
   knockout = knockout,
+  seed = 4000,
   info = txt
 )
 
-sim_ntc$group     <- "non-targeting"
-sim_ntc$genotype  <- "NTC"
-sim_ntc$guide     <- "NTC-1"
-sim_ntc$on_guide  <- "NTC"
-sim_ntc$on_target <- TRUE
+sim_ntc_1$group     <- "NTC"
+sim_ntc_1$genotype  <- "NTC"
+sim_ntc_1$guide     <- "mouseNTC-1"
+sim_ntc_1$on_guide  <- "NTC"
+sim_ntc_1$on_target <- TRUE
+
+txt <- "simulating cells for NTC guide 2"
+sim_ntc_2 <- .sim_pipe(
+  sce_obj = sce_obj[names(marg_ntc), cells_ntc_2],
+  celltype = "celltype",
+  covariates = c("C", "K", "I", "K_I", "library"),
+  params = lapply(params_ntc, function(x) x[cells_ntc_2, , drop = FALSE]),
+  copulas = copula_on,
+  corr_by = "K_I",
+  family_use = "zinb",
+  new_covariate = new_cov_ntc[cells_ntc_2, , drop = FALSE],
+  knockout = knockout,
+  seed = 5000,
+  info = txt
+)
+
+sim_ntc_2$group     <- "NTC"
+sim_ntc_2$genotype  <- "NTC"
+sim_ntc_2$guide     <- "mouseNTC-2"
+sim_ntc_2$on_guide  <- "NTC"
+sim_ntc_2$on_target <- TRUE
+
+txt <- "simulating cells for NTC guide 3"
+sim_ntc_3 <- .sim_pipe(
+  sce_obj = sce_obj[names(marg_ntc), cells_ntc_3],
+  celltype = "celltype",
+  covariates = c("C", "K", "I", "K_I", "library"),
+  params = lapply(params_ntc, function(x) x[cells_ntc_3, , drop = FALSE]),
+  copulas = copula_on,
+  corr_by = "K_I",
+  family_use = "zinb",
+  new_covariate = new_cov_ntc[cells_ntc_3, , drop = FALSE],
+  knockout = knockout,
+  seed = 6000,
+  info = txt
+)
+
+sim_ntc_3$group     <- "NTC"
+sim_ntc_3$genotype  <- "NTC"
+sim_ntc_3$guide     <- "mouseNTC-3"
+sim_ntc_3$on_guide  <- "NTC"
+sim_ntc_3$on_target <- TRUE
 
 ### Ground truth --------------------------------------------------------------
-sce_obj <- BiocGenerics::cbind(sim_ntc, sim_tar_on_1, sim_tar_on_2, sim_tar_off)
+sce_obj <- BiocGenerics::cbind(sim_tar_1, sim_tar_2, sim_tar_3, sim_ntc_1, sim_ntc_2, sim_ntc_3)
 
-sce_rd_new  <- sce_rd[rownames(sce_obj), , drop = FALSE]
+# Celltype
+sce_obj$celltype <- unique(sce_rd$celltype)
 
+sce_rd_new            <- sce_rd[rownames(sce_obj), , drop = FALSE]
 sce_rd_new$guide_mode <- "unique off-target effect"
-sce_rd_new$nOn        <- nOn
+sce_rd_new$fracOff    <- fracOff
 sce_rd_new$koEff      <- koEff
 
 # Log counts
 sce_obj <- scater::logNormCounts(sce_obj)
 
-cells_ntc <- which(sce_obj$group == "non-targeting")
-cells_tar <- which(sce_obj$group == "targeting")
+cells_ntc <- which(sce_obj$group == "NTC")
+cells_tar <- which(sce_obj$group == "KO")
 
 log_counts <- SummarizedExperiment::assay(sce_obj, "logcounts")
 obs_logFC  <- Matrix::rowMeans(log_counts[, cells_tar]) - Matrix::rowMeans(log_counts[, cells_ntc])
@@ -588,7 +687,7 @@ top_ontarget   <- top_ontarget[order(match(top_ontarget, on_idx))]
 top_offtarget  <- top_offtarget[order(match(top_offtarget, off_idx))]
 top_background <- top_background[order(match(top_background, back_idx))]
 
-row_ord <- c(ko_idx, top_ontarget, top_background)
+row_ord <- c(ko_idx, top_ontarget, top_offtarget, top_background)
 
 # Matrix
 mat <- as.matrix(SummarizedExperiment::assay(sce_obj, "logcounts"))
@@ -1016,6 +1115,10 @@ ggplot2::geom_boxplot(
   linewidth = 0.3,
   coef = Inf
 ) +
+ggplot2::scale_color_manual(
+  name = "Guide",
+  values = col_guides
+) +
 ggplot2::facet_grid(
   cols = ggplot2::vars(gene_status)
 ) +
@@ -1041,6 +1144,10 @@ p_panel_C02 <- ggplot2::ggplot(
 ggplot2::geom_boxplot(
   linewidth = 0.3,
   coef = Inf
+) +
+ggplot2::scale_color_manual(
+  name = "Guide",
+  values = col_guides
 ) +
 ggplot2::facet_grid(
   cols = ggplot2::vars(gene_status)
@@ -1071,6 +1178,10 @@ ggplot2::geom_smooth(
   linewidth = 0.2,
   show.legend = FALSE
 ) +
+ggplot2::scale_color_manual(
+  name = "Guide",
+  values = col_guides
+) +
 ggplot2::labs(
   x = expression("Mean log"[2] * "(CPM + 1)"),
   y = expression("Variance log"[2] * "(CPM + 1)"),
@@ -1093,6 +1204,10 @@ p_panel_C04 <- ggplot2::ggplot(
 ggplot2::geom_boxplot(
   linewidth = 0.3,
   coef = Inf
+) +
+ggplot2::scale_color_manual(
+  name = "Guide",
+  values = col_guides
 ) +
 ggplot2::facet_grid(
   cols = ggplot2::vars(gene_status)
@@ -1118,6 +1233,10 @@ p_panel_C05 <- ggplot2::ggplot(
 ggplot2::geom_boxplot(
   linewidth = 0.3,
   coef = Inf
+) +
+ggplot2::scale_color_manual(
+  name = "Guide",
+  values = col_guides
 ) +
 ggplot2::scale_y_continuous(
   limits = c(0, 100),
@@ -1148,6 +1267,10 @@ p_panel_C06 <- ggplot2::ggplot(
 ggplot2::geom_boxplot(
   linewidth = 0.3,
   coef = Inf
+) +
+ggplot2::scale_color_manual(
+  name = "Guide",
+  values = col_guides
 ) +
 ggplot2::scale_y_continuous(
   limits = c(0, 100),
@@ -1184,6 +1307,10 @@ ggplot2::geom_smooth(
   se = FALSE,
   linewidth = 0.2,
   show.legend = FALSE
+) +
+ggplot2::scale_color_manual(
+  name = "Guide",
+  values = col_guides
 ) +
 ggplot2::scale_y_continuous(
   limits = c(0, 100),
