@@ -10,9 +10,9 @@ Currently the repository holds 4 nextflow pipelines:
 The pipeline execution is managed through bash scripts in the `bash` directory.
 ``` 
 bash/ 
-  ├── nxf_run_pipeline.sh    # Pipeline launch
-  ├── nxf_submit_pipline.sh  # Slurm execution
-  └── nxf_clean_pipeline.sh  # Cleans a pipeline
+├── nxf_run_pipeline.sh    # Pipeline launch
+├── nxf_submit_pipline.sh  # Slurm execution
+└── nxf_clean_pipeline.sh  # Cleans a pipeline
 ```
 ```
 # Submit a new pipeline run
@@ -25,7 +25,6 @@ bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001
 ```
 
 **Output directories:**
-
 Each pipeline execution is organized by pipeline name and run ID. This ensures that different workflows and individual executions remain separated. The following directory structure is used:
 ```
 .nextflow/
@@ -33,7 +32,7 @@ Each pipeline execution is organized by pipeline name and run ID. This ensures t
     └── RUN_ID/
         └── cache/
             └── ...
-            
+
 work/
 └── PIPELINE_NAME/
     └── RUN_ID/
@@ -50,6 +49,7 @@ slurm/
     └── RUN_ID.log
 ```
 
+
 ## Pipeline execution workflow
 The pipeline launcher `nxf_run_pipeline.sh` performs the following steps:
 1. Pipeline selection: The user specifies a pipeline name and a custom run ID.
@@ -58,13 +58,13 @@ The pipeline launcher `nxf_run_pipeline.sh` performs the following steps:
 
 The submitted job is handled by `nxf_sub_pipeline.sh` via the following:
 
-**I. New execution**
+**I. New run**
 1. Checks that no existing Nextflow run directory exists for the selected pipeline and run ID.
 2. Creates a dedicated Nextflow cache directory.
 3. Creates a dedicated Netxflow work directory.
 4. Creates a dedicated SLURM log file.
 
-**II. Resume execution**
+**II. Resume run**
 1. Checks that the original Nextflow cache directory exists.
 2. Verifies that the cache contains at least one session directory.
 3. Checks that the original working directory is available.
