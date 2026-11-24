@@ -1,12 +1,19 @@
-## Nextflow pipelines
+# Nextflow pipelines
 
-Currently the repository holds 4 nextflow pipelines.
+Currently the repository holds 4 nextflow pipelines:
 - ArcSimSyn_offtarget_none.nf
 - ArcSimSyn_offtarget_unique.nf
 - ArcSimSyn_offtarget_mixed.nf
-
 - ArcSimSyn_singlecell_baseline.nf
 
+**Pipeline execution:**
+The pipeline execution is managed through bash scripts in the `bash` directory.
+``` 
+bash/ 
+  ├── nxf_run_pipeline.sh   
+  ├── nxf_submit_pipline.sh  
+  └── nxf_clean_pipeline.sh
+```
 
 ### Differential expression methods
 
