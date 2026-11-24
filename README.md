@@ -6,7 +6,7 @@ The project benchmarked common DGE tools to analyse the performance on Perturb-S
 ### Limma
 Best practice limma-voom differential gene expression pipeline.
 
-#### Arguments
+**Arguments:**
 * `formula`: A string for the model formula specifying the design. (e.g., `~ genotype + sample`).
 * `ref`: A string for the reference level for the target covariate. (e.g., `"NTC"`).
 
