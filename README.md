@@ -8,15 +8,14 @@ Currently the repository holds 4 nextflow pipelines:
 
 **Pipeline execution:**
 The pipeline execution is managed through bash scripts in the `bash` directory.
-```bash
-  ./nxf_run_pipeline.sh -list
-```
-
 ``` 
 bash/ 
   ├── nxf_run_pipeline.sh    # Pipeline launcher
   ├── nxf_submit_pipline.sh  # Submits to slurm 
   └── nxf_clean_pipeline.sh  # Cleans a pipeline run
+```
+```
+  ./nxf_run_pipeline.sh -list
 ```
 
 ### Differential expression methods
