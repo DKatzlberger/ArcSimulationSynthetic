@@ -26,11 +26,14 @@ bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001
 **Execution workflow:**
 The pipeline launcher `nxf_run_pipeline.sh` performs the following steps:
 1. Pipeline selection: The user specifies a pipeline name and a custom run ID.
-2. Run ID generation: For new runs, the current date (YYYY-MM-DD) is automatically appended. Resume runs retain the original run ID.
-3. File validation: Checks that the selected pipeline, corresponding .config file and SLURM submission script exist.
-4. Directory validation: Ensures that new runs do not overwrite existing executions. Resume runs must have their original Nextflow cache and work directories.
-5. SLURM submission: Submits the job using sbatch.
-
+2. Run ID generation: For new runs, the current date (YYYY-MM-DD) is automatically appended.
+3. SLURM submission: Submits the job using sbatch.
+The submitted job is handled by `nxf_sub_pipeline.sh` via the following:
+**I. New execution**
+1. Checks that no existing Nextflow run directory exists for the selected pipeline and run ID.
+2. Creates a dedicated Nextflow cache directory.
+3. Creates a dedicated Netxflow work directory.
+4. Creates a dedicated SLURM log file.
 
 ## Pipeline description
 ### Differential expression methods
