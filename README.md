@@ -15,7 +15,8 @@ bash/
   └── nxf_clean_pipeline.sh  # Cleans a pipeline run
 ```
 ```
-  ./nxf_run_pipeline.sh -list
+  # Submit a new pipeline run
+  bash bash/nxf_run_pipeline.sh -list
 ```
 
 ### Differential expression methods
