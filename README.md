@@ -11,6 +11,7 @@ Best practice limma-voom differential gene expression pipeline.
 * `ref`: The reference level for the target covariate. (e.g. `"NTC"`).
 
 **Description:**
+
 The ***first covariate*** specified in `formula` is treated as the **target covariate**. The pipeline exclusively extracts differentially expressed genes (DEGs) associated with this target. 
 
 To establish the baseline for comparison, the corresponding column in the metadata dataframe is converted into a factor. 
