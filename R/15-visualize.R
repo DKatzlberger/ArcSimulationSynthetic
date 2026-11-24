@@ -8,6 +8,7 @@
 seed <- 42
 set.seed(seed)
 
+
 ## Settings ===================================================================
 if (!interactive()) {
   # Commands
@@ -38,8 +39,8 @@ if (!interactive()) {
 
   # Paths
   project_root <- "/home/scc_e_928652/ArcSimulationSynthetic"
-  input_path   <- list.files(path = "results/nextflow/ArcSimSyn_offtarget_mixed/LabMeeting_2026-11-18", pattern = "_dge\\.rds$", recursive = TRUE, full.names = TRUE)
-  output_path  <- "results/nextflow/ArcSimSyn_offtarget_mixed/LabMeeting_2026-11-18/15-visualize"
+  input_path   <- list.files(path = "results/nextflow/ArcSimSyn_offtarget_none/LabMeeting_2026-11-23", pattern = "_dge\\.rds$", recursive = TRUE, full.names = TRUE)
+  output_path  <- "results/nextflow/ArcSimSyn_offtarget_none/LabMeeting_2026-11-23/15-visualize"
 
   stopifnot(dirname(dirname(input_path)) == dirname(output_path))
   if (!dir.exists(output_path)) dir.create(path = output_path, recursive = TRUE)
@@ -76,7 +77,27 @@ showf(fmt = "\n%s\n", line80(paste0(script_name, ".R")), type = "cat")
 
 
 ## Dataset ====================================================================
+### Load ----------------------------------------------------------------------
 readDGE <- function(file_paths) {
+
+  # Helper
+  check_na <- function(df, path) {
+    na_cols <- colSums(is.na(df))
+    na_cols <- na_cols[na_cols > 0]
+
+    if (length(na_cols) > 0) {
+      showf(
+        "%s: %s of %s rows contain NA (columns: %s)",
+        basename(dirname(path)),
+        sum(!complete.cases(df)),
+        nrow(df),
+        paste0(names(na_cols), " [", na_cols, "]", collapse = ", "),
+        type = "warning"
+      )
+    }
+
+    length(na_cols) == 0   # TRUE if the file has no NA
+  }
 
   # Validate input files
   file_paths <- as.character(file_paths)
@@ -92,7 +113,11 @@ readDGE <- function(file_paths) {
     current_path <- file_paths[i]
 
     loaded_data[[i]] <- tryCatch(
-      expr = as.data.frame(readRDS(current_path)),
+      expr = {
+        df <- as.data.frame(readRDS(current_path))
+        # check_na(df, current_path)
+        df
+      },
       error = function(e) {
         bad_files <<- c(bad_files, current_path)
         showf(
@@ -158,24 +183,37 @@ readDGE <- function(file_paths) {
 }
 
 .readDGE <- fun_with_ram(readDGE)
-dge <- readDGE(input_path)
+dge <- .readDGE(input_path)
 
-
-## Levels & order ============================================================
+### Order ---------------------------------------------------------------------
 method_levels  <- c("limma", "edger", "deseq2", "dream", "nebula", "wilcox", "sceptre", "scmageck")
 formula_levels <- c("~genotype", "~genotype + sample", "~genotype + (1|sample)", "~genotype + sample + (1|guide)", "~genotype + (1|sample) + (1|guide)")
 
 dge$facLoc  <- factor(if ("facLoc"  %in% names(dge)) dge$facLoc  else "1")
-dge$facOff  <- factor(if ("facOff"  %in% names(dge)) dge$facOff  else "1")
+dge$facOff  <- factor(if ("fracOff"  %in% names(dge)) dge$fracOff  else "1")
 dge$koEff   <- factor(if ("koEff"   %in% names(dge)) dge$koEff   else "1")
 dge$nGuide  <- factor(if ("nGuide"  %in% names(dge)) dge$nGuide  else "1")
 
 dge$method  <- factor(if ("method"  %in% names(dge)) dge$method  else "1", levels = method_levels)
 dge$formula <- factor(if ("formula" %in% names(dge)) dge$formula else "1", levels = formula_levels)
 
+### Save ----------------------------------------------------------------------
+.save_rds <- fun_with_ram(base::saveRDS)
+txt       <- "saving combined dge obj. as 'benchmark.rds'."
 
-## Data Panel A, B, C & D =====================================================
-vars_1     <- c("sim_mode", "workflow", "method_type", "method", "gene_qc", "formula", "time_min")
+.save_rds(
+  dge, 
+  file = file.path(
+    output_path,
+    "benchmark.rds"
+  ),
+  info = txt
+)
+
+
+## Plot data ==================================================================
+### Panel A, B, C & D ---------------------------------------------------------
+vars_1     <- c("sim_mode", "guide_mode", "workflow", "method_type", "method", "gene_qc", "formula", "time_min")
 vars_2     <- c("facLoc", "facOff", "koEff", "nGuide")
 group_vars <- c(vars_1, vars_2)
 
@@ -283,7 +321,7 @@ higher_metric_long$is_best <- as.logical(
 
 
 ## Panel A ====================================================================
-## Panel A00: Annotations =====================================================
+### Panel A00: Annotations ----------------------------------------------------
 
 # Sim. mode
 p_sim_mode <- ggplot2::ggplot(
@@ -324,16 +362,48 @@ theme_DK(
   show_axis = FALSE
 ) +
 ggplot2::theme(
-  strip.text.x = ggplot2::element_text(
-    angle = 90,
-    hjust = 0,
-    vjust = 0.5
-  ),
-  axis.title.y = ggplot2::element_text(
-    angle = 0,
-    vjust = 0.5,
-    hjust = 0.5
-  ),
+  strip.text.x = ggplot2::element_text(angle = 90, hjust = 0, vjust = 0.5),
+  axis.title.y = ggplot2::element_text(angle = 0, vjust = 0.5, hjust = 0.5),
+  plot.margin = ggplot2::margin(0, 0, 0, 0, "pt")
+)
+
+# Guide mode
+p_guide_mode <- ggplot2::ggplot(
+  data = stats,
+  mapping = ggplot2::aes(
+    x = method,
+    y = "Guide mode",
+    fill = guide_mode
+  )
+) +
+ggplot2::geom_tile(
+  color = "black",
+  linewidth = 0.1,
+  show.legend = TRUE
+) +
+ggplot2::facet_grid(
+  cols = ggplot2::vars(formula),
+  scales = "free_x",
+  space = "free"
+) +
+# ggplot2::scale_fill_manual(
+#   name = "Guide mode",
+# ) +
+ggplot2::labs(
+  x = NULL,
+  y = NULL,
+  fill = "Guide mode"
+) +
+theme_DK(
+  show_facet_x = FALSE,
+  show_label_x = FALSE,
+  show_ticks_x = FALSE,
+  show_borders = FALSE,
+  show_grid = FALSE,
+  show_axis = FALSE
+) +
+ggplot2::theme(,
+  axis.title.y = ggplot2::element_text(angle = 0, vjust = 0.5, hjust = 0.5),
   plot.margin = ggplot2::margin(0, 0, 0, 0, "pt")
 )
 
@@ -375,11 +445,7 @@ theme_DK(
   show_axis = FALSE
 ) +
 ggplot2::theme(
-  axis.title.y = ggplot2::element_text(
-    angle = 0,
-    vjust = 0.5,
-    hjust = 0.5
-  ),
+  axis.title.y = ggplot2::element_text(angle = 0, vjust = 0.5, hjust = 0.5),
   plot.margin = ggplot2::margin(0, 0, 0, 0, "pt")
 )
 
@@ -418,11 +484,7 @@ theme_DK(
   show_axis = FALSE
 ) +
 ggplot2::theme(
-  axis.title.y = ggplot2::element_text(
-    angle = 0,
-    vjust = 0.5,
-    hjust = 0.5
-  ),
+  axis.title.y = ggplot2::element_text(angle = 0, vjust = 0.5, hjust = 0.5),
   plot.margin = ggplot2::margin(0, 0, 0, 0, "pt")
 )
 
@@ -474,13 +536,14 @@ ggplot2::theme(
 # Patchwork
 p_panel_A00 <- wrap_plots(
   p_sim_mode,
+  p_guide_mode,
   p_workflow,
   p_method_type,
   p_gene_qc,
   ncol = 1
 )
 
-## Panel A01: Tested ==========================================================
+### Panel A01: Tested ---------------------------------------------------------
 p_panel_A01 <- ggplot2::ggplot(
   data = stats,
   mapping = ggplot2::aes(
@@ -527,7 +590,7 @@ theme_DK(
   show_grid = FALSE
 )
 
-## Panel A02: Gene status =====================================================
+### Panel A02: Gene status ----------------------------------------------------
 p_panel_A02 <- ggplot2::ggplot(
   data = status_long, 
   mapping = ggplot2::aes(
@@ -581,7 +644,7 @@ theme_DK(
   show_grid = FALSE
 )
 
-## Panel A03: Power ===========================================================
+### Panel A03: Power ----------------------------------------------------------
 p_panel_A03 <- ggplot2::ggplot(
   data = stats,
   mapping = ggplot2::aes(
@@ -662,7 +725,7 @@ theme_DK(
   show_grid = FALSE
 )
 
-## Panel A04: FDR =============================================================
+### Panel A04: FDR ------------------------------------------------------------
 p_panel_A04 <- ggplot2::ggplot(
   data = stats, 
   mapping = ggplot2::aes(
@@ -743,7 +806,7 @@ theme_DK(
   show_grid = FALSE
 )
 
-## Panel A05: Higher metric ===================================================
+### Panel A05: Higher metric --------------------------------------------------
 p_panel_A05 <- ggplot2::ggplot(
   data = higher_metric_long,
   mapping = ggplot2::aes(
@@ -792,7 +855,7 @@ theme_DK(
   show_grid = FALSE
 )
 
-## Panel A06: Time (min) ======================================================
+### Panel A06: Time (min) -----------------------------------------------------
 p_panel_A06 <- ggplot2::ggplot(
   data = aggregate(time_min ~ formula + method, data = stats, FUN = mean),
   mapping = ggplot2::aes(
@@ -834,7 +897,7 @@ ggplot2::theme(
   plot.margin = ggplot2::margin(0, 0, 0, 0)
 )
 
-## Patchwork & save ===========================================================
+### Patchwork & save ----------------------------------------------------------
 panel_dir <- file.path(output_path, "panel_A")
 if (!dir.exists(panel_dir)) dir.create(panel_dir, recursive = TRUE)
 
@@ -848,7 +911,7 @@ p_panel_A <-
   p_panel_A06 +
   patchwork::plot_layout(
     ncol = 1,
-    heights = c(0.05, 0.05, 0.05, 0.05, 0.25, 0.3, 0.3, 0.3, 0.15, 0.05),
+    heights = c(0.05, 0.05, 0.05, 0.05, 0.05, 0.25, 0.3, 0.3, 0.3, 0.15, 0.05),
     guides = "collect"
   ) 
 
@@ -886,7 +949,7 @@ saveRDS(
 
 
 ## Panel B ====================================================================
-## Panel B00: Annotations =====================================================
+### Panel B00: Annotations ----------------------------------------------------
 
 # Sim. mode
 p_sim_mode <- ggplot2::ggplot(
@@ -927,26 +990,59 @@ theme_DK(
   show_axis = FALSE
 ) +
 ggplot2::theme(
-  strip.text.x = ggplot2::element_text(
-    angle = 90,
-    hjust = 0,
-    vjust = 0.5
-  ),
-  axis.title.y = ggplot2::element_text(
-    angle = 0,
-    vjust = 0.5,
-    hjust = 0.5
-  ),
+  strip.text.x = ggplot2::element_text(angle = 90, hjust = 0, vjust = 0.5),
+  axis.title.y = ggplot2::element_text(angle = 0, vjust = 0.5, hjust = 0.5),
+  plot.margin = ggplot2::margin(0, 0, 0, 0, "pt")
+)
+
+# Guide mode
+p_guide_mode <- ggplot2::ggplot(
+  data = stats,
+  mapping = ggplot2::aes(
+    x = nGuide,
+    y = "Guide mode",
+    fill = guide_mode
+  )
+) +
+ggplot2::geom_tile(
+  color = "black",
+  linewidth = 0.1,
+  show.legend = TRUE
+) +
+ggplot2::facet_grid(
+  cols = ggplot2::vars(formula),
+  scales = "free_x",
+  space = "free"
+) +
+# ggplot2::scale_fill_manual(
+#   name = "Guide mode",
+# ) +
+ggplot2::labs(
+  x = NULL,
+  y = NULL,
+  fill = "Guide mode"
+) +
+theme_DK(
+  show_facet_x = FALSE,
+  show_label_x = FALSE,
+  show_ticks_x = FALSE,
+  show_borders = FALSE,
+  show_grid = FALSE,
+  show_axis = FALSE
+) +
+ggplot2::theme(,
+  axis.title.y = ggplot2::element_text(angle = 0, vjust = 0.5, hjust = 0.5),
   plot.margin = ggplot2::margin(0, 0, 0, 0, "pt")
 )
 
 # Patchwork
 p_panel_B00 <- wrap_plots(
   p_sim_mode,
+  p_guide_mode,
   ncol = 1
 )
 
-## Panel B01: Power ===========================================================
+### Panel B01: Power ----------------------------------------------------------
 p_panel_B01 <- ggplot2::ggplot(
   data = stats, 
   mapping = ggplot2::aes(
@@ -966,6 +1062,10 @@ ggplot2::stat_summary(
   geom = "line", 
   linewidth = 0.3
 ) +
+ggplot2::scale_color_manual(
+  name = "Method",
+  values = colors_method
+) +
 ggplot2::scale_y_continuous(
   limits = c(0, 1)
 ) +
@@ -976,8 +1076,7 @@ ggplot2::facet_grid(
 ) +
 ggplot2::labs(
   x = "Cells per guide", 
-  y = "Power",
-  color = "Method"
+  y = "Power"
 ) +
 theme_DK(
   show_facet_x = FALSE,
@@ -986,7 +1085,7 @@ theme_DK(
   show_grid = FALSE
 )
 
-## Panel B02: FDR =============================================================
+### Panel B02: FDR ------------------------------------------------------------
 p_panel_B02 <- ggplot2::ggplot(
   data = stats, 
   mapping = ggplot2::aes(
@@ -1005,6 +1104,10 @@ ggplot2::stat_summary(
   fun = mean, 
   geom = "line", 
   linewidth = 0.3
+) +
+ggplot2::scale_color_manual(
+  name = "Method",
+  values = colors_method
 ) +
 ggplot2::scale_y_continuous(
   limits = c(0, 1)
@@ -1025,7 +1128,7 @@ theme_DK(
   show_grid = FALSE
 )
 
-## Patchwork & save ===========================================================
+### Patchwork & save ----------------------------------------------------------
 panel_dir <- file.path(output_path, "panel_B")
 if (!dir.exists(panel_dir)) dir.create(panel_dir, recursive = TRUE)
 
@@ -1035,7 +1138,7 @@ p_panel_B <-
   p_panel_B02 +
   patchwork::plot_layout(
     ncol = 1,
-    heights = c(0.05, 0.3, 0.3),
+    heights = c(0.05, 0.05, 0.3, 0.3),
     guides = "collect"
   ) 
 
@@ -1052,8 +1155,8 @@ purrr::walk(
         ".", fmt
       )
     ),
-    width = 9,
-    height = 7,
+    width = 10,
+    height = 8,
     units = "cm",
     dpi = 300
   )
@@ -1075,7 +1178,7 @@ saveRDS(
 if (!all(is.na(stats$fpr_ratio))) {
 
 ## Panel C ====================================================================
-## Panel C00: Annotations =====================================================
+### Panel C00: Annotations ----------------------------------------------------
 
 # Sim. mode
 p_sim_mode <- ggplot2::ggplot(
@@ -1226,7 +1329,7 @@ p_panel_C00 <- wrap_plots(
   ncol = 1
 )
 
-## Panel C01: Tested ==========================================================
+### Panel C01: Tested ---------------------------------------------------------
 p_panel_C01 <- ggplot2::ggplot(
   data = stats,
   mapping = ggplot2::aes(
@@ -1273,7 +1376,7 @@ theme_DK(
   show_grid = FALSE
 )
 
-## Panel C02: FPR =============================================================
+### Panel C02: FPR ------------------------------------------------------------
 p_panel_C02 <- ggplot2::ggplot(
   data = stats, 
   mapping = ggplot2::aes(
@@ -1319,7 +1422,7 @@ theme_DK(
   show_grid = FALSE
 )
 
-## Panel C03: FPR contribution ================================================
+### Panel C03: FPR contribution -----------------------------------------------
 p_panel_C03 <- ggplot2::ggplot(
   data = reshape(
     data = stats,
@@ -1367,7 +1470,7 @@ theme_DK(
   show_grid = FALSE
 )
 
-## Panel C04: FPR ratio =======================================================
+### Panel C04: FPR ratio ------------------------------------------------------
 p_panel_C04 <- ggplot2::ggplot(
   data = stats, 
   mapping = ggplot2::aes(
@@ -1421,7 +1524,7 @@ theme_DK(
   show_grid = FALSE
 )
 
-## Patchwork & save ===========================================================
+### Patchwork & save ----------------------------------------------------------
 panel_dir <- file.path(output_path, "panel_C")
 if (!dir.exists(panel_dir)) dir.create(panel_dir, recursive = TRUE)
 
@@ -1471,7 +1574,7 @@ saveRDS(
 
 
 ## Panel D ====================================================================
-## Panel D0: Annotations ======================================================
+### Panel D0: Annotations -----------------------------------------------------
 
 # Sim. mode
 p_sim_mode <- ggplot2::ggplot(
@@ -1512,25 +1615,58 @@ theme_DK(
   show_axis = FALSE
 ) +
 ggplot2::theme(
-  strip.text.x = ggplot2::element_text(
-    angle = 90,
-    hjust = 0,
-    vjust = 0.5
-  ),
-  axis.title.y = ggplot2::element_text(
-    angle = 0,
-    vjust = 0.5,
-    hjust = 0.5
-  ),
+  strip.text.x = ggplot2::element_text(angle = 90, hjust = 0, vjust = 0.5),
+  axis.title.y = ggplot2::element_text(angle = 0, vjust = 0.5, hjust = 0.5),
+  plot.margin = ggplot2::margin(0, 0, 0, 0, "pt")
+)
+
+# Guide mode
+p_guide_mode <- ggplot2::ggplot(
+  data = stats,
+  mapping = ggplot2::aes(
+    x = nGuide,
+    y = "Guide mode",
+    fill = guide_mode
+  )
+) +
+ggplot2::geom_tile(
+  color = "black",
+  linewidth = 0.1,
+  show.legend = TRUE
+) +
+ggplot2::facet_grid(
+  cols = ggplot2::vars(formula),
+  scales = "free_x",
+  space = "free"
+) +
+# ggplot2::scale_fill_manual(
+#   name = "Guide mode",
+# ) +
+ggplot2::labs(
+  x = NULL,
+  y = NULL,
+  fill = "Guide mode"
+) +
+theme_DK(
+  show_facet_x = FALSE,
+  show_label_x = FALSE,
+  show_ticks_x = FALSE,
+  show_borders = FALSE,
+  show_grid = FALSE,
+  show_axis = FALSE
+) +
+ggplot2::theme(,
+  axis.title.y = ggplot2::element_text(angle = 0, vjust = 0.5, hjust = 0.5),
   plot.margin = ggplot2::margin(0, 0, 0, 0, "pt")
 )
 
 # Patchwork
 p_panel_D0 <- wrap_plots(
   p_sim_mode,
+  p_guide_mode,
   ncol = 1
 )
-## Panel D1: Off-target FPR ===================================================
+### Panel D1: Off-target FPR --------------------------------------------------
 p_panel_D1 <- ggplot2::ggplot(
   data = stats, 
   mapping = ggplot2::aes(
@@ -1550,6 +1686,10 @@ ggplot2::stat_summary(
   geom = "line", 
   linewidth = 0.3
 ) +
+ggplot2::scale_color_manual(
+  name = "Method",
+  values = colors_method
+) +
 ggplot2::scale_y_continuous(
   limits = c(0, 1)
 ) +
@@ -1560,8 +1700,7 @@ ggplot2::facet_grid(
 ) +
 ggplot2::labs(
   x = "Cells per guide", 
-  y = expression(FPR[Off]),
-  color = "Method"
+  y = expression(FPR[Off])
 ) +
 theme_DK(
   show_facet_x = FALSE,
@@ -1570,7 +1709,7 @@ theme_DK(
   show_grid = FALSE
 )
 
-## Panel D2: Background FPR ===================================================
+### Panel D2: Background FPR --------------------------------------------------
 p_panel_D2 <- ggplot2::ggplot(
   data = stats, 
   mapping = ggplot2::aes(
@@ -1590,6 +1729,10 @@ ggplot2::stat_summary(
   geom = "line", 
   linewidth = 0.3
 ) +
+ggplot2::scale_color_manual(
+  name = "Method",
+  values = colors_method
+) +
 ggplot2::scale_y_continuous(
   limits = c(0, 1)
 ) +
@@ -1600,8 +1743,7 @@ ggplot2::facet_grid(
 ) +
 ggplot2::labs(
   x = "Cells per targeting guide", 
-  y = expression(FPR[Bg]),
-  color = "Method"
+  y = expression(FPR[Bg])
 ) +
 theme_DK(
   rotate = 45,
@@ -1609,7 +1751,7 @@ theme_DK(
   show_grid = FALSE
 )
 
-## Patchwork & save ===========================================================
+### Patchwork & save ----------------------------------------------------------
 panel_dir <- file.path(output_path, "panel_D")
 if (!dir.exists(panel_dir)) dir.create(panel_dir, recursive = TRUE)
 

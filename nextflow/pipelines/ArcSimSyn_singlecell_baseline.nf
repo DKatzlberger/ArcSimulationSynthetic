@@ -15,7 +15,7 @@ include { visualize }  from "../modules/15-visualize.nf"
 
 // Parameters
 params {
-    data: Path = "data/GSE213511/rna_integrated.rds"
+    data: Path = "data_generated/GSE213511/rna_integrated.rds"
 
     // Prepare
     prepare_celltype = ["Gran. P"]
@@ -246,7 +246,7 @@ workflow {
     res_scmageck = scmageck.out
 
     // Visualize
-    res_visualize = visualize.out.panels
+    res_visualize = visualize.out
 }
 
 output {

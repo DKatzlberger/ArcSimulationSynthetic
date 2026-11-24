@@ -6,8 +6,8 @@ process visualize {
     path dge_files
 
     output:
-    path "panel_*", emit: panels
-
+    tuple path("benchmark.rds"),
+          path("panel_*")
 
     script:
     """

@@ -171,7 +171,7 @@ genes_background <- genes_background[seq_len(min(nBack, length(genes_background)
 ### Marginals -----------------------------------------------------------------
 .estimate_marginals <- fun_with_ram(estimate_marginals)
 
-txt <- sprintf("on-target downstream: conditioned by %s expression 'C' and sample info 'I'", knockout)
+txt <- sprintf("on-target downstream: conditioned by 'K' and sample info 'I'")
 marg_on_downstream <- .estimate_marginals(
   sce_obj = sce_obj[genes_downstream, ],
   assay_use = "counts",
@@ -186,7 +186,7 @@ marg_on_downstream <- .estimate_marginals(
   info = txt
 )
 
-txt <- sprintf("off-target downstream: conditioned by %s expression 'C' and sample info 'I'", knockout)
+txt <- sprintf("off-target downstream: conditioned by 'K' and sample info 'I'")
 marg_off_downstream <- .estimate_marginals(
   sce_obj = sce_obj[genes_off_target, ],
   assay_use = "counts",
@@ -599,7 +599,7 @@ sce_obj <- BiocGenerics::cbind(sim_tar_1, sim_tar_2, sim_tar_3, sim_ntc_1, sim_n
 sce_obj$celltype <- unique(sce_rd$celltype)
 
 sce_rd_new            <- sce_rd[rownames(sce_obj), , drop = FALSE]
-sce_rd_new$guide_mode <- "unique off-target effect"
+sce_rd_new$guide_mode <- "unique off-target"
 sce_rd_new$fracOff    <- fracOff
 sce_rd_new$koEff      <- koEff
 

@@ -1,3 +1,12 @@
+## Nextflow pipelines
+
+Currently the repository holds 4 nextflow pipelines.
+- Based on `scDesign3` simulations
+-- ArcSimSyn_offtarget_none.nf
+-- ArcSimSyn_offtarget_unique.nf
+-- ArcSimSyn_offtarget_mixed.nf
+
+
 ### Differential expression methods
 
 #### 07-limma.R
@@ -22,8 +31,6 @@ The analysis is executed through the following sequential workflow:
 4. Precision weights: `limma::voom` using the model matrix.
 5. Model fit: `limma::lmFit`.
 6. Test: `limma::eBayes`.
-
-NOTE: The differential statistics are merged with simulation ground truth data.
 
 #### 08-edgeR.R
 
@@ -175,3 +182,6 @@ The value matching the `ref` argument is explicitly set as the *refernce*.
 The analysis is executed through the following sequential workflow:
 1. Guide assignment: A pseudo guide matrix is created.
 1. Test: `scMAGeCK::scmageck_lr`.
+
+
+NOTE: The differential statistics are merged with simulation ground truth data.

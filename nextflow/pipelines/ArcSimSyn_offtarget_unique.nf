@@ -280,7 +280,7 @@ workflow {
     res_scmageck = scmageck.out
 
     // Visualize
-    res_visualize = visualize.out.panels
+    res_visualize = visualize.out
 }
 
 output {

@@ -642,7 +642,7 @@ sce_obj <- BiocGenerics::cbind(sim_tar_1, sim_tar_2, sim_tar_3, sim_ntc_1, sim_n
 sce_obj$celltype <- unique(sce_rd$celltype)
 
 sce_rd_new            <- sce_rd[rownames(sce_obj), , drop = FALSE]
-sce_rd_new$guide_mode <- "mixed off-target effect"
+sce_rd_new$guide_mode <- "mixed off-target"
 sce_rd_new$fracOff    <- fracOff
 sce_rd_new$koEff      <- koEff
 
