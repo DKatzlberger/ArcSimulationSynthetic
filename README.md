@@ -10,22 +10,23 @@ Currently the repository holds 4 nextflow pipelines:
 The pipeline execution is managed through bash scripts in the `bash` directory.
 ``` 
 bash/ 
-  ├── nxf_run_pipeline.sh    # Pipeline launcher
-  ├── nxf_submit_pipline.sh  # Slurm scheduler
-  └── nxf_clean_pipeline.sh  # Cleans a pipeline run
+  ├── nxf_run_pipeline.sh    # Pipeline launch
+  ├── nxf_submit_pipline.sh  # Slurm execution
+  └── nxf_clean_pipeline.sh  # Cleans a pipeline
 ```
-```{bash}
+```
 # Submit a new pipeline run
 bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001
 ```
-
-The current date is added to the `run_id` in the format `_Year-Month-Day`, e.g. `test001_2026-11-18`.
-
+Note: The current date is added to the `run_id` in the format `_YYYY-MM-DD`, e.g. `test001_2026-11-18`.
 ```
 # Resume an existing run
 bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001_2026-11-18 -resume
 ```
-**Pipeline execution:**
+**Execution workflow:**
+The pipeline launcher `nxf_run_pipeline.sh` performs the following steps:
+1. Pipeline selection: The user specifies a pipeline name and a custom run ID.
+2. Run ID generation: For new runs, the current date (YYYY-MM-DD) is automatically appended to the custom run ID. Resume runs retain the original run ID.
 
 ## Pipeline description
 ### Differential expression methods
