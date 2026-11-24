@@ -15,14 +15,15 @@ bash/
   └── nxf_clean_pipeline.sh  # Cleans a pipeline run
 ```
 ```
-  # Submit a new pipeline run
-  bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001
+# Submit a new pipeline run
+bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001
 ```
-The current date is added to the `run_id` in the format `_Year-Month-Day`.
-For example: `test001_2026-11-18`.
+
+The current date is added to the `run_id` in the format `_Year-Month-Day`, e.g. `test001_2026-11-18`.
+
 ```
-  # Resume an existing run
-  bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001
+# Resume an existing run
+bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001
 ```
 
 ## Pipeline description
