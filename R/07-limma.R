@@ -122,7 +122,7 @@ meta[[target_covariate]] <- factor(meta[[target_covariate]])
 meta[[target_covariate]] <- relevel(meta[[target_covariate]], ref = ref)
 
 # Model matrix
-mm  <- model.matrix(fixed_formula, data = meta)
+mm <- model.matrix(fixed_formula, data = meta)
 
 # N cells per group
 groups <- meta[[target_covariate]]
