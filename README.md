@@ -6,8 +6,7 @@ Currently the repository holds 4 nextflow pipelines:
 - ArcSimSyn_offtarget_mixed.nf
 - ArcSimSyn_singlecell_baseline.nf
 
-**Pipeline execution:**
-
+## Pipeline execution:
 The pipeline execution is managed through bash scripts in the `bash` directory.
 ``` 
 bash/ 
@@ -24,7 +23,7 @@ Note: The current date is added to the `run_id` in the format `_YYYY-MM-DD`, e.g
 # Resume an existing run
 bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001_2026-11-18 -resume
 ```
-**Execution workflow:**
+## Execution workflow
 
 The pipeline launcher `nxf_run_pipeline.sh` performs the following steps:
 1. Pipeline selection: The user specifies a pipeline name and a custom run ID.
@@ -44,6 +43,7 @@ The submitted job is handled by `nxf_sub_pipeline.sh` via the following:
 2. Verifies that the cache contains at least one session directory.
 3. Checks that the original working directory is available.
 4. Reuses the existing cache and work directory to continue the execution.
+
 Note: If any required directory or file is missing, the submission script terminates.
 
 ## Pipeline description
