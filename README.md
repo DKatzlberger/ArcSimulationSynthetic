@@ -28,7 +28,9 @@ The pipeline launcher `nxf_run_pipeline.sh` performs the following steps:
 1. Pipeline selection: The user specifies a pipeline name and a custom run ID.
 2. Run ID generation: For new runs, the current date (YYYY-MM-DD) is automatically appended.
 3. SLURM submission: Submits the job using sbatch.
+
 The submitted job is handled by `nxf_sub_pipeline.sh` via the following:
+
 **I. New execution**
 1. Checks that no existing Nextflow run directory exists for the selected pipeline and run ID.
 2. Creates a dedicated Nextflow cache directory.
