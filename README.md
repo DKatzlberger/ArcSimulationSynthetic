@@ -3,15 +3,15 @@
 Differential gene expression (DGE) scripts:
 The project benchmarked common DGE tools to analyse the performance on Perturb-Seq datasets.
 
-### Limma
+#### 07-limma.R
 Best practice limma-voom differential gene expression pipeline.
 
 **Arguments:**
-* `formula`: A string for the model formula specifying the design. (e.g., `~ genotype + sample`).
-* `ref`: A string for the reference level for the target covariate. (e.g., `"NTC"`).
+* `formula`: The model formula specifying the design. (e.g. `~ genotype + sample`).
+* `ref`: The reference level for the target covariate. (e.g. `"NTC"`).
 
-#### **Description**
-The **first covariate** specified in the `formula` is treated as the **target covariate**. The pipeline exclusively extracts differentially expressed genes (DEGs) associated with this target. 
+**Description:**
+The ***first covariate*** specified in `formula` is treated as the **target covariate**. The pipeline exclusively extracts differentially expressed genes (DEGs) associated with this target. 
 
 To establish the baseline for comparison, the corresponding column in the metadata dataframe is converted into a factor. 
 The level matching the `ref` argument is explicitly set as the **first level (reference baseline)**.
