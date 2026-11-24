@@ -11,10 +11,10 @@ The pipeline execution is managed through bash scripts in the `bash` directory.
 ``` 
 bash/ 
   ├── nxf_run_pipeline.sh    # Pipeline launcher
-  ├── nxf_submit_pipline.sh  # Submits to slurm 
+  ├── nxf_submit_pipline.sh  # Slurm scheduler
   └── nxf_clean_pipeline.sh  # Cleans a pipeline run
 ```
-```
+```{bash}
 # Submit a new pipeline run
 bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001
 ```
@@ -23,8 +23,9 @@ The current date is added to the `run_id` in the format `_Year-Month-Day`, e.g. 
 
 ```
 # Resume an existing run
-bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001
+bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001_2026-11-18 -resume
 ```
+**Pipeline execution:**
 
 ## Pipeline description
 ### Differential expression methods
