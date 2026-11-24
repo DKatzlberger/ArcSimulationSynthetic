@@ -6,7 +6,7 @@ Currently the repository holds 4 nextflow pipelines:
 - ArcSimSyn_offtarget_mixed.nf
 - ArcSimSyn_singlecell_baseline.nf
 
-## Pipeline execution:
+## Run a nextflow pipeline
 The pipeline execution is managed through bash scripts in the `bash` directory.
 ``` 
 bash/ 
@@ -23,7 +23,7 @@ Note: The current date is added to the `run_id` in the format `_YYYY-MM-DD`, e.g
 # Resume an existing run
 bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001_2026-11-18 -resume
 ```
-## Execution workflow
+## Pipeline execution workflow
 
 The pipeline launcher `nxf_run_pipeline.sh` performs the following steps:
 1. Pipeline selection: The user specifies a pipeline name and a custom run ID.
@@ -46,7 +46,7 @@ The submitted job is handled by `nxf_sub_pipeline.sh` via the following:
 
 Note: If any required directory or file is missing, the submission script terminates.
 
-## Pipeline description
+## Pipeline modules
 ### Differential expression methods
 
 #### 07-limma.R
@@ -57,7 +57,7 @@ Note: If any required directory or file is missing, the submission script termin
 - `formula`: The model formula specifying the design.
 - `ref`: The reference level for the target covariate.
 
-**Script:**
+**Workflow:**
 
 The first covariate specified in `formula` is treated as the *target covariate*. The pipeline exclusively extracts differentially expressed genes associated with this covariate. 
 
@@ -80,7 +80,7 @@ The analysis is executed through the following sequential workflow:
 - `formula`: The model formula specifying the design.
 - `ref`: The reference level for the target covariate.
 
-**Script:**
+**Workflow:**
 
 The first covariate specified in `formula` is treated as the *target covariate*. The pipeline exclusively extracts differentially expressed genes associated with this covariate. 
 
@@ -103,7 +103,7 @@ The analysis is executed through the following sequential workflow:
 - `formula`: The model formula specifying the design.
 - `ref`: The reference level for the target covariate.
 
-**Script:**
+**Workflow:**
 
 The first covariate specified in `formula` is treated as the *target covariate*. The pipeline exclusively extracts differentially expressed genes associated with this covariate. 
 
@@ -125,7 +125,7 @@ The analysis is executed through the following sequential workflow:
 - `formula`: The model formula specifying the design.
 - `ref`: The reference level for the target covariate.
 
-**Script:**
+**Workflow:**
 
 The first covariate specified in `formula` is treated as the *target covariate*. The pipeline exclusively extracts differentially expressed genes associated with this covariate. 
 
@@ -149,7 +149,7 @@ The analysis is executed through the following sequential workflow:
 - `ref`: The reference level for the target covariate.
 
 
-**Script:**
+**Workflow:**
 
 The first covariate specified in `formula` is treated as the *target covariate*. The pipeline exclusively extracts differentially expressed genes associated with this covariate. 
 
@@ -169,7 +169,7 @@ The analysis is executed through the following sequential workflow:
 - `ref`: The reference level for the target covariate.
 
 
-**Script:**
+**Workflow:**
 
 The first covariate specified in `formula` is treated as the *target covariate*. The pipeline exclusively extracts differentially expressed genes associated with this covariate. 
 
@@ -191,7 +191,7 @@ The analysis is executed through the following sequential workflow:
 - `ref`: The reference level for the target covariate.
 
 
-**Script:**
+**Workflow:**
 
 The first covariate specified in `formula` is treated as the *target covariate*. The pipeline exclusively extracts differentially expressed genes associated with this covariate. 
 
@@ -212,7 +212,7 @@ The analysis is executed through the following sequential workflow:
 - `ref`: The reference level for the target covariate.
 
 
-**Script:**
+**Workflow:**
 
 The first covariate specified in `formula` is treated as the *target covariate*. The pipeline exclusively extracts differentially expressed genes associated with this covariate. 
 
