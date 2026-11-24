@@ -1,10 +1,11 @@
 ## Nextflow pipelines
 
 Currently the repository holds 4 nextflow pipelines.
-- Based on `scDesign3` simulations
--- ArcSimSyn_offtarget_none.nf
--- ArcSimSyn_offtarget_unique.nf
--- ArcSimSyn_offtarget_mixed.nf
+- ArcSimSyn_offtarget_none.nf
+- ArcSimSyn_offtarget_unique.nf
+- ArcSimSyn_offtarget_mixed.nf
+
+- ArcSimSyn_singlecell_baseline.nf
 
 
 ### Differential expression methods
