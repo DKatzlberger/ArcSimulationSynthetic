@@ -28,6 +28,26 @@ bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001
 
 Each pipeline execution is organized by pipeline name and run ID. This ensures that different workflows and individual executions remain separated. The following directory structure is used:
 ```
+.nextflow/
+└── PIPELINE_NAME/
+    └── RUN_ID/
+        └── cache/
+            └── ...
+            
+work/
+└── PIPELINE_NAME/
+    └── RUN_ID/
+        └── ...
+
+results/
+└── nextflow/
+    └── PIPELINE_NAME/
+        └── RUN_ID/
+            └── ...
+
+slurm/
+└── PIPELINE_NAME/
+    └── RUN_ID.log
 ```
 
 ## Pipeline execution workflow
