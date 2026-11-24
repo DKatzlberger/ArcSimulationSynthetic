@@ -23,8 +23,14 @@ Note: The current date is added to the `run_id` in the format `_YYYY-MM-DD`, e.g
 # Resume an existing run
 bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001_2026-11-18 -resume
 ```
-## Pipeline execution workflow
 
+**Output directories:**
+
+Each pipeline execution is organized by pipeline name and run ID. This ensures that different workflows and individual executions remain separated. The following directory structure is used:
+```
+```
+
+## Pipeline execution workflow
 The pipeline launcher `nxf_run_pipeline.sh` performs the following steps:
 1. Pipeline selection: The user specifies a pipeline name and a custom run ID.
 2. Run ID generation: For new runs, the current date (YYYY-MM-DD) is automatically appended.
