@@ -12,7 +12,7 @@ The pipeline execution is managed through bash scripts in the `bash` directory.
 bash/ 
 ├── nxf_run_pipeline.sh    # Pipeline launch
 ├── nxf_submit_pipline.sh  # Slurm execution
-└── nxf_clean_pipeline.sh  # Cleans a pipeline
+└── nxf_clean_pipeline.sh  # Cleans a run
 ```
 ```
 # Submit a new pipeline run
@@ -25,6 +25,7 @@ bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001
 ```
 
 **Output directories:**
+
 Each pipeline execution is organized by pipeline name and run ID. This ensures that different workflows and individual executions remain separated. The following directory structure is used:
 ```
 .nextflow/
@@ -49,6 +50,13 @@ slurm/
     └── RUN_ID.log
 ```
 
+**Clean existing run:**
+
+In case you want to clean a pipeline run use `nxf_clean_pipeline.sh`.
+```
+# Cleans the whole run, incl. results
+bash bash/nxf_clean_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001_2026-11-18
+```
 
 ## Pipeline execution workflow
 The pipeline launcher `nxf_run_pipeline.sh` performs the following steps:
