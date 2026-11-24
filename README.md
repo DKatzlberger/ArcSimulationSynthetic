@@ -16,8 +16,9 @@ bash/
 ```
 ```
   # Submit a new pipeline run
-  bash bash/nxf_run_pipeline.sh -list
+  bash bash/nxf_run_pipeline.sh -pipeline ArcSimSyn_offtarget_none -run_id test001
 ```
+The current date is added to the `run_id` in the format `_Year-Month-Day`.
 
 ### Differential expression methods
 
